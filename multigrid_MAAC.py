@@ -3,6 +3,9 @@ import gymnasium as gym
 import torch
 import os
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
 from gym.spaces import Box, Discrete
 from pathlib import Path
 from torch.autograd import Variable
@@ -13,6 +16,88 @@ from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 from algorithms.attention_sac import AttentionSAC
 
 import multigrid.envs
+
+
+def smooth_curve(values, weight=0.9):
+    """Exponential moving average smoothing."""
+    if not values:
+        return []
+    smoothed = []
+    last = values[0]
+    for value in values:
+        smoothed_val = last * weight + (1 - weight) * value
+        smoothed.append(smoothed_val)
+        last = smoothed_val
+    return smoothed
+
+
+def save_training_plots(metrics, plots_dir, episode, final=False):
+    """Save training plots using matplotlib."""
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    fig.suptitle(f'MAAC Training Metrics (Episode {episode})', fontsize=16)
+    
+    # Plot 1: Critic Loss
+    ax1 = axes[0, 0]
+    if metrics['critic_losses']:
+        ax1.plot(metrics['steps'], metrics['critic_losses'], 
+                alpha=0.5, label='Critic Loss', color='blue')
+        ax1.plot(metrics['steps'], smooth_curve(metrics['critic_losses']), 
+                label='Critic Loss (smoothed)', linewidth=2, color='darkblue')
+    ax1.set_xlabel('Training Steps')
+    ax1.set_ylabel('Loss')
+    ax1.set_title('Critic Loss')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot 2: Policy Loss
+    ax2 = axes[0, 1]
+    if metrics['policy_losses']:
+        ax2.plot(metrics['steps'], metrics['policy_losses'], 
+                alpha=0.5, label='Policy Loss', color='red')
+        ax2.plot(metrics['steps'], smooth_curve(metrics['policy_losses']), 
+                label='Policy Loss (smoothed)', linewidth=2, color='darkred')
+    ax2.set_xlabel('Training Steps')
+    ax2.set_ylabel('Loss')
+    ax2.set_title('Policy Loss')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # Plot 3: Episode Rewards
+    ax3 = axes[1, 0]
+    if metrics['episode_rewards']:
+        ax3.plot(metrics['episodes'], metrics['episode_rewards'], 
+                alpha=0.5, label='Episode Reward', color='green')
+        ax3.plot(metrics['episodes'], smooth_curve(metrics['episode_rewards']), 
+                label='Episode Reward (smoothed)', linewidth=2, color='darkgreen')
+    ax3.set_xlabel('Episode')
+    ax3.set_ylabel('Total Reward')
+    ax3.set_title('Episode Rewards')
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+    
+    # Plot 4: Mean Agent Rewards
+    ax4 = axes[1, 1]
+    if metrics['mean_agent_rewards']:
+        ax4.plot(metrics['episodes'], metrics['mean_agent_rewards'], 
+                alpha=0.5, label='Mean Agent Reward', color='orange')
+        ax4.plot(metrics['episodes'], smooth_curve(metrics['mean_agent_rewards']), 
+                label='Mean Agent Reward (smoothed)', linewidth=2, color='darkorange')
+    ax4.set_xlabel('Episode')
+    ax4.set_ylabel('Mean Reward per Agent')
+    ax4.set_title('Mean Agent Rewards')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    filename = 'training_final.png' if final else f'training_ep{episode}.png'
+    save_path = plots_dir / filename
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
 
 def run(config):
     model_dir = Path('./models') / config.env_id / config.model_name
@@ -31,6 +116,20 @@ def run(config):
     log_dir = run_dir / 'logs'
     os.makedirs(log_dir)
     logger = SummaryWriter(str(log_dir))
+    
+    # Create plots directory
+    plots_dir = run_dir / 'plots'
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # Initialize tracking metrics
+    training_metrics = {
+        'critic_losses': [],
+        'policy_losses': [],
+        'episode_rewards': [],
+        'mean_agent_rewards': [],
+        'episodes': [],
+        'steps': []
+    }
 
     torch.manual_seed(run_num)
     np.random.seed(run_num)
@@ -98,20 +197,49 @@ def run(config):
                     model.prep_training(device='gpu')
                 else:
                     model.prep_training(device='cpu')
+                
+                # Track losses for this update cycle
+                cycle_critic_losses = []
+                cycle_policy_losses = []
+                
                 for u_i in range(config.num_updates):
                     sample = replay_buffer.sample(config.batch_size,
                                                   to_gpu=config.use_gpu)
-                    model.update_critic(sample, logger=logger)
-                    model.update_policies(sample, logger=logger)
+                    critic_loss = model.update_critic(sample, logger=logger)
+                    policy_loss = model.update_policies(sample, logger=logger)
                     model.update_all_targets()
+                    
+                    if critic_loss is not None:
+                        cycle_critic_losses.append(critic_loss)
+                    if policy_loss is not None:
+                        cycle_policy_losses.append(policy_loss)
+                
+                # Store average losses for plotting
+                if cycle_critic_losses:
+                    training_metrics['critic_losses'].append(np.mean(cycle_critic_losses))
+                if cycle_policy_losses:
+                    training_metrics['policy_losses'].append(np.mean(cycle_policy_losses))
+                training_metrics['steps'].append(t)
+                
                 model.prep_rollouts(device='cpu')
         ep_rews = replay_buffer.get_average_rewards(
             config.episode_length * config.n_rollout_threads)
         # print("Episode rewards:", ep_rews)
         print(f"Episode {ep_i} rewards: {recent_total_rewards}")
+        
+        # Store episode metrics
+        training_metrics['episodes'].append(ep_i)
+        training_metrics['episode_rewards'].append(recent_total_rewards.sum())
+        training_metrics['mean_agent_rewards'].append(recent_total_rewards.mean())
+        
         for a_i, a_ep_rew in enumerate(ep_rews):
             logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
                               a_ep_rew * config.episode_length, ep_i)
+        
+        # Save plots periodically
+        if ep_i > 0 and ep_i % config.plot_interval == 0:
+            save_training_plots(training_metrics, plots_dir, ep_i)
+            print(f"Plots saved to {plots_dir}")
 
         if ep_i % config.save_interval < config.n_rollout_threads:
             model.prep_rollouts(device='cpu')
@@ -120,6 +248,11 @@ def run(config):
             model.save(run_dir / 'model.pt')
 
     model.save(run_dir / 'model.pt')
+    
+    # Save final plots
+    save_training_plots(training_metrics, plots_dir, config.n_episodes, final=True)
+    print(f"\nFinal plots saved to {plots_dir}")
+    
     env.close()
     logger.export_scalars_to_json(str(log_dir / 'summary.json'))
     logger.close()
@@ -142,6 +275,8 @@ if __name__ == '__main__':
                         default=1024, type=int,
                         help="Batch size for training")
     parser.add_argument("--save_interval", default=1000, type=int)
+    parser.add_argument("--plot_interval", default=100, type=int,
+                        help="Interval for saving training plots")
     parser.add_argument("--pol_hidden_dim", default=128, type=int)
     parser.add_argument("--critic_hidden_dim", default=128, type=int)
     parser.add_argument("--attend_heads", default=4, type=int)

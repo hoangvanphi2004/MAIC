@@ -1,12 +1,198 @@
 import numpy as np
 import gymnasium as gym
 import time
+import os
+from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
 
 import torch
 import multigrid.envs
 from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 #from PDSAC import PDSACDiscreteAgent, ReplayBufferPDSAC 
 from PDSAC_joint_valid import PDSACReinforceAgent, ReplayBufferPDSAC
+
+
+def smooth_curve(values, weight=0.9):
+    """Exponential moving average smoothing."""
+    if not values:
+        return []
+    smoothed = []
+    last = values[0]
+    for value in values:
+        smoothed_val = last * weight + (1 - weight) * value
+        smoothed.append(smoothed_val)
+        last = smoothed_val
+    return smoothed
+
+
+def save_training_plots(metrics, plots_dir, episode, final=False):
+    """Save training plots using matplotlib."""
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    fig.suptitle(f'PDSAC Training Metrics (Episode {episode})', fontsize=16)
+    
+    # Plot 1: Actor Loss
+    ax1 = axes[0, 0]
+    if metrics['actor_losses']:
+        ax1.plot(metrics['steps'], metrics['actor_losses'], 
+                alpha=0.5, label='Actor Loss', color='blue')
+        ax1.plot(metrics['steps'], smooth_curve(metrics['actor_losses']), 
+                label='Actor Loss (smoothed)', linewidth=2, color='darkblue')
+    ax1.set_xlabel('Training Steps')
+    ax1.set_ylabel('Loss')
+    ax1.set_title('Actor Loss')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot 2: Critic Loss
+    ax2 = axes[0, 1]
+    if metrics['critic_losses']:
+        ax2.plot(metrics['steps'], metrics['critic_losses'], 
+                alpha=0.5, label='Critic Loss', color='red')
+        ax2.plot(metrics['steps'], smooth_curve(metrics['critic_losses']), 
+                label='Critic Loss (smoothed)', linewidth=2, color='darkred')
+    ax2.set_xlabel('Training Steps')
+    ax2.set_ylabel('Loss')
+    ax2.set_title('Critic Loss')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # Plot 3: Q Values
+    ax3 = axes[0, 2]
+    if metrics['q_values']:
+        ax3.plot(metrics['steps'], metrics['q_values'], 
+                alpha=0.5, label='Q Value', color='green')
+        ax3.plot(metrics['steps'], smooth_curve(metrics['q_values']), 
+                label='Q Value (smoothed)', linewidth=2, color='darkgreen')
+    ax3.set_xlabel('Training Steps')
+    ax3.set_ylabel('Q Value')
+    ax3.set_title('Average Q Values')
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+    
+    # Plot 4: Alpha (Temperature)
+    ax4 = axes[1, 0]
+    if metrics['alpha_values']:
+        ax4.plot(metrics['steps'], metrics['alpha_values'], 
+                alpha=0.5, label='Alpha', color='purple')
+        ax4.plot(metrics['steps'], smooth_curve(metrics['alpha_values']), 
+                label='Alpha (smoothed)', linewidth=2, color='darkviolet')
+    ax4.set_xlabel('Training Steps')
+    ax4.set_ylabel('Alpha')
+    ax4.set_title('Temperature Parameter (α)')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+    
+    # Plot 5: Entropy
+    ax5 = axes[1, 1]
+    if metrics['entropy_values']:
+        ax5.plot(metrics['steps'], metrics['entropy_values'], 
+                alpha=0.5, label='Entropy', color='orange')
+        ax5.plot(metrics['steps'], smooth_curve(metrics['entropy_values']), 
+                label='Entropy (smoothed)', linewidth=2, color='darkorange')
+    ax5.set_xlabel('Training Steps')
+    ax5.set_ylabel('Entropy')
+    ax5.set_title('Policy Entropy')
+    ax5.legend()
+    ax5.grid(True, alpha=0.3)
+    
+    # Plot 6: Episode Rewards
+    ax6 = axes[1, 2]
+    if metrics['episode_rewards']:
+        episodes = np.array(metrics['episodes'])
+        rewards = np.array(metrics['episode_rewards'])
+        
+        ax6.plot(episodes, rewards, alpha=0.3, color='green', label='Episode Reward')
+        ax6.plot(episodes, smooth_curve(rewards.tolist()), 
+                label='Reward (smoothed)', linewidth=2, color='darkgreen')
+        
+        # Add trend line
+        if len(episodes) > 10:
+            z = np.polyfit(episodes, rewards, 1)
+            p = np.poly1d(z)
+            ax6.plot(episodes, p(episodes), "--", 
+                    label=f'Trend (slope={z[0]:.4f})', 
+                    color='red', linewidth=2)
+    
+    ax6.set_xlabel('Episode')
+    ax6.set_ylabel('Total Reward')
+    ax6.set_title('Episode Rewards')
+    ax6.legend()
+    ax6.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    filename = 'training_final.png' if final else f'training_ep{episode}.png'
+    save_path = plots_dir / filename
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
+def print_training_summary(metrics):
+    """Print training statistics summary."""
+    print("\n" + "="*60)
+    print("TRAINING STATISTICS")
+    print("="*60)
+    
+    if metrics['episode_rewards']:
+        rewards = np.array(metrics['episode_rewards'])
+        print(f"\nEpisode Rewards:")
+        print(f"  Initial: {rewards[0]:.3f}")
+        print(f"  Final: {rewards[-1]:.3f}")
+        print(f"  Max: {rewards.max():.3f}")
+        print(f"  Mean: {rewards.mean():.3f} ± {rewards.std():.3f}")
+    
+    if metrics['actor_losses']:
+        losses = np.array(metrics['actor_losses'])
+        print(f"\nActor Loss:")
+        print(f"  Initial: {losses[0]:.4f}")
+        print(f"  Final: {losses[-1]:.4f}")
+        print(f"  Mean: {losses.mean():.4f} ± {losses.std():.4f}")
+    
+    if metrics['critic_losses']:
+        losses = np.array(metrics['critic_losses'])
+        print(f"\nCritic Loss:")
+        print(f"  Initial: {losses[0]:.4f}")
+        print(f"  Final: {losses[-1]:.4f}")
+        print(f"  Mean: {losses.mean():.4f} ± {losses.std():.4f}")
+    
+    if metrics['q_values']:
+        q_vals = np.array(metrics['q_values'])
+        print(f"\nQ Values:")
+        print(f"  Initial: {q_vals[0]:.3f}")
+        print(f"  Final: {q_vals[-1]:.3f}")
+        print(f"  Mean: {q_vals.mean():.3f} ± {q_vals.std():.3f}")
+    
+    if metrics['entropy_values']:
+        entropy = np.array(metrics['entropy_values'])
+        print(f"\nEntropy:")
+        print(f"  Initial: {entropy[0]:.4f}")
+        print(f"  Final: {entropy[-1]:.4f}")
+        print(f"  Mean: {entropy.mean():.4f} ± {entropy.std():.4f}")
+    
+    print("="*60)
+
+
+# Create directories for saving plots and models
+run_dir = Path('./runs/pdsac_multitarget')
+plots_dir = run_dir / 'plots'
+plots_dir.mkdir(parents=True, exist_ok=True)
+
+# Initialize tracking metrics
+training_metrics = {
+    'actor_losses': [],
+    'critic_losses': [],
+    'q_values': [],
+    'alpha_values': [],
+    'entropy_values': [],
+    'episode_rewards': [],
+    'episodes': [],
+    'steps': []
+}
     
 env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
 
@@ -25,6 +211,7 @@ batch_size = 1024
 start_steps = 1000
 steps_per_update = 100
 updates_num = 4
+plot_interval = 100  # Save plots every N episodes
 
 rewards, test_rewards = [], []
 total_steps = 0
@@ -69,9 +256,26 @@ for ep in range(episodes):
         ep_reward += np.array(rewards)
         #print("start print:", obs, actions, np.array(rewards).sum(), next_obs.shape, dones.all())
         if len(replay_buffer) > batch_size and total_steps % steps_per_update == 0:
+            # Track metrics for this update cycle
+            cycle_metrics = {
+                'actor_loss': [],
+                'critic_loss': [],
+                'avg_q': [],
+                'alpha': [],
+                'entropy': []
+            }
+            
             for i in range(updates_num):
                 st = time.time()
                 metrics = agents.update(replay_buffer, batch_size)
+                
+                # Collect metrics
+                cycle_metrics['actor_loss'].append(metrics['actor_loss'])
+                cycle_metrics['critic_loss'].append(metrics['critic_loss'])
+                cycle_metrics['avg_q'].append(metrics['avg_q'])
+                cycle_metrics['alpha'].append(metrics['alpha'])
+                cycle_metrics['entropy'].append(metrics['entropy'])
+                
                 if i == 0:  # Only print first update to avoid clutter
                     print(f"[Ep {ep:4d} | Step {step:3d}] "
                           f"Actor: {metrics['actor_loss']:7.4f} | Critic: {metrics['critic_loss']:7.4f} | "
@@ -79,8 +283,32 @@ for ep in range(episodes):
                           f"α: {metrics['alpha']:6.4f} (loss: {metrics['alpha_loss']:7.4f}) | "
                           f"Entropy: {metrics['entropy']:6.4f} | Reward: {metrics['reward']:6.3f}")
                 #print("Update time taken:", et - st)
+            
+            # Store average metrics for plotting
+            training_metrics['actor_losses'].append(np.mean(cycle_metrics['actor_loss']))
+            training_metrics['critic_losses'].append(np.mean(cycle_metrics['critic_loss']))
+            training_metrics['q_values'].append(np.mean(cycle_metrics['avg_q']))
+            training_metrics['alpha_values'].append(np.mean(cycle_metrics['alpha']))
+            training_metrics['entropy_values'].append(np.mean(cycle_metrics['entropy']))
+            training_metrics['steps'].append(total_steps)
         if dones.all():
             break
+    
+    # Store episode metrics
+    training_metrics['episodes'].append(ep)
+    training_metrics['episode_rewards'].append(ep_reward.sum())
+    
+    # Save plots periodically
+    if ep > 0 and ep % plot_interval == 0:
+        save_training_plots(training_metrics, plots_dir, ep)
+        print(f"Plots saved to {plots_dir}")
+    
     if(ep % 200 == 199): env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3, render_mode="human")
     else: env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
     print(f"ep: {ep}, ep_rw: {ep_reward}")
+
+# Save final plots
+print("\nSaving final training plots...")
+save_training_plots(training_metrics, plots_dir, episodes, final=True)
+print(f"Final plots saved to {plots_dir}")
+print_training_summary(training_metrics)
