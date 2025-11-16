@@ -8,7 +8,7 @@ from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 #from PDSAC import PDSACDiscreteAgent, ReplayBufferPDSAC 
 from PDSAC_joint_valid import PDSACReinforceAgent, ReplayBufferPDSAC
     
-env = gym.make('MultiGrid-EmptyMultiTarget-8x8-v0', agents=3)
+env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
 
 num_agents = len(env.observation_space)
 state_dim = np.prod(env.observation_space[0]['image'].shape)
@@ -19,8 +19,8 @@ print("Num agents:", num_agents, "State dim:", state_dim, "Action dim:", action_
 agents = PDSACReinforceAgent(num_agents, state_dim, action_dim)
 replay_buffer = ReplayBufferPDSAC(capacity=1_000_000)
 
-episodes = 50000
-steps_per_episode = 200
+episodes = 5000
+steps_per_episode = 40
 batch_size = 1024
 start_steps = 1000
 steps_per_update = 100
@@ -81,6 +81,6 @@ for ep in range(episodes):
                 #print("Update time taken:", et - st)
         if dones.all():
             break
-    if(ep % 200 == 199): env = gym.make('MultiGrid-EmptyMultiTarget-8x8-v0', agents=3, render_mode="human")
-    else: env = gym.make('MultiGrid-EmptyMultiTarget-8x8-v0', agents=3)
+    if(ep % 200 == 199): env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3, render_mode="human")
+    else: env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
     print(f"ep: {ep}, ep_rw: {ep_reward}")

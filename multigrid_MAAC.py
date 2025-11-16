@@ -35,7 +35,7 @@ def run(config):
     torch.manual_seed(run_num)
     np.random.seed(run_num)
     # Num agent lager than 3
-    env = gym.make('MultiGrid-EmptyMultiTarget-8x8-v0', agents=3)
+    env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
     # print("env observation space:", env.observation_space)
     # print("env action space:", env.action_space)
     model = AttentionSAC.init_from_env(env,
