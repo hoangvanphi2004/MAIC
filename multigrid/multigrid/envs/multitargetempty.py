@@ -1,0 +1,350 @@
+from __future__ import annotations
+
+from multigrid.base import MultiGridEnv
+from multigrid.core import Grid
+from multigrid.core.constants import Color, Direction, Type
+from multigrid.core.world_object import Goal, WorldObj
+from multigrid.core.agent import Agent
+from typing import SupportsFloat
+import numpy as np
+
+
+class AgentGoal(WorldObj):
+    """
+    Goal object that belongs to a specific agent.
+    Only the owner agent can collect this goal.
+    """
+    
+    type_name = 'goal'
+    
+    def __new__(cls, agent_id: int, color: str = 'green'):
+        """
+        Parameters
+        ----------
+        agent_id : int
+            The index of the agent that owns this goal
+        color : str
+            Object color (string like 'red', 'green', etc.)
+        """
+        obj = super().__new__(cls, color=color)
+        obj.agent_id = agent_id
+        obj.collected = False
+        return obj
+    
+    def can_overlap(self) -> bool:
+        return True
+    
+    def render(self, img):
+        from ..utils.rendering import fill_coords, point_in_rect
+        fill_coords(img, point_in_rect(0, 1, 0, 1), self.color.rgb())
+
+
+class MultiTargetEmptyEnv(MultiGridEnv):
+    """
+    Multi-agent environment where each agent has their own target goal.
+    
+    ***********
+    Description
+    ***********
+    
+    This environment is an empty room where each agent has their own colored goal.
+    Each agent receives a reward when they reach their own goal (individual reward).
+    Once all agents have reached their goals, all agents receive a large team bonus reward.
+    
+    Features:
+    - Each agent has a uniquely colored goal
+    - Agents can only collect their own goals
+    - Individual reward for reaching own goal
+    - Team bonus reward when all goals are collected
+    - Optional reward decay based on number of steps
+    
+    *************
+    Mission Space
+    *************
+    
+    "reach your colored goal and help the team collect all goals"
+    
+    *****************
+    Observation Space
+    *****************
+    
+    The multi-agent observation space is a Dict mapping from agent index to
+    corresponding agent observation space.
+    
+    Each agent observation is a dictionary with the following entries:
+    
+    * image : ndarray[int] of shape (view_size, view_size, :attr:`.WorldObj.dim`)
+        Encoding of the agent's partially observable view of the environment
+    * direction : int
+        Agent's direction (0: right, 1: down, 2: left, 3: up)
+    * mission : Mission
+        Task string corresponding to the current environment configuration
+    
+    ************
+    Action Space
+    ************
+    
+    The multi-agent action space is a Dict mapping from agent index to
+    corresponding agent action space.
+    
+    Agent actions are discrete integer values, given by:
+    
+    +-----+--------------+-----------------------------+
+    | Num | Name         | Action                      |
+    +=====+==============+=============================+
+    | 0   | left         | Turn left                   |
+    +-----+--------------+-----------------------------+
+    | 1   | right        | Turn right                  |
+    +-----+--------------+-----------------------------+
+    | 2   | forward      | Move forward                |
+    +-----+--------------+-----------------------------+
+    | 3   | pickup       | Pick up an object           |
+    +-----+--------------+-----------------------------+
+    | 4   | drop         | Drop an object              |
+    +-----+--------------+-----------------------------+
+    | 5   | toggle       | Toggle / activate an object |
+    +-----+--------------+-----------------------------+
+    | 6   | done         | Done completing task        |
+    +-----+--------------+-----------------------------+
+    
+    *******
+    Rewards
+    *******
+    
+    - Individual reward: ``individual_reward * decay_factor`` when agent reaches their goal
+    - Team bonus: ``team_bonus_reward`` when all agents reach their goals
+    - Decay factor: ``1 - decay_rate * (step_count / max_steps)`` if reward_decay=True
+    
+    ***********
+    Termination
+    ***********
+    
+    The episode ends when:
+    
+    * All agents have reached their goals
+    * Timeout (see ``max_steps``)
+    
+    *************************
+    Registered Configurations
+    *************************
+    
+    * ``MultiGrid-MultiTargetEmpty-8x8-v0``
+    * ``MultiGrid-MultiTargetEmpty-16x16-v0``
+    """
+    
+    def __init__(
+        self,
+        size: int = 8,
+        num_agents: int = 2,
+        agent_start_pos: tuple[int, int] | None = None,
+        agent_start_dir: Direction | None = None,
+        max_steps: int | None = None,
+        individual_reward: float = 1.0,
+        team_bonus_reward: float = 5.0,
+        reward_decay: bool = True,
+        decay_rate: float = 0.9,
+        **kwargs):
+        """
+        Parameters
+        ----------
+        size : int, default=8
+            Width and height of the grid
+        num_agents : int, default=2
+            Number of agents in the environment
+        agent_start_pos : tuple[int, int], optional
+            Starting position of all agents (random if None)
+        agent_start_dir : Direction, optional
+            Starting direction of all agents (random if None)
+        max_steps : int, optional
+            Maximum number of steps per episode
+        individual_reward : float, default=1.0
+            Reward given to an agent when they reach their own goal
+        team_bonus_reward : float, default=5.0
+            Bonus reward given to all agents when all goals are collected
+        reward_decay : bool, default=True
+            Whether to apply time-based decay to rewards
+        decay_rate : float, default=0.9
+            Rate of reward decay (0-1), applied as: 1 - decay_rate * (step_count / max_steps)
+        **kwargs
+            See :attr:`multigrid.base.MultiGridEnv.__init__`
+        """
+        self.agent_start_pos = agent_start_pos
+        self.agent_start_dir = agent_start_dir
+        self.individual_reward = individual_reward
+        self.team_bonus_reward = team_bonus_reward
+        self.reward_decay = reward_decay
+        self.decay_rate = decay_rate
+        
+        # Track which agents have collected their goals
+        self.goals_collected = None
+        self.agent_goals = {}  # Maps agent_id to their goal object
+        
+        super().__init__(
+            mission_space="reach your colored goal and help the team collect all goals",
+            agents=num_agents,
+            grid_size=size,
+            max_steps=max_steps or (4 * size**2),
+            joint_reward=False,  # Individual rewards per agent
+            success_termination_mode='all',  # Terminate when all agents reach goals
+            **kwargs,
+        )
+    
+    def _gen_grid(self, width, height):
+        """
+        Generate the grid for a new episode.
+        """
+        # Create an empty grid
+        self.grid = Grid(width, height)
+        
+        # Generate the surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+        
+        # Reset goal collection tracking
+        self.goals_collected = [False] * self.num_agents
+        self.agent_goals = {}
+        
+        # Get available colors for goals - use .value to get string from Color enum
+        color_list = ['red', 'green', 'blue', 'purple', 'yellow', 'grey']
+        
+        # Place agent-specific goals at different positions
+        goal_positions = self._generate_goal_positions(width, height, self.num_agents)
+        
+        for i, agent in enumerate(self.agents):
+            # Get color for this agent (cycle through available colors)
+            color_str = color_list[i % len(color_list)]
+            
+            # Create a goal for this agent
+            goal = AgentGoal(agent_id=i, color=color_str)
+            
+            # Place the goal
+            pos = goal_positions[i]
+            self.put_obj(goal, pos[0], pos[1])
+            self.agent_goals[i] = goal
+            
+            # Set agent color to match their goal
+            agent.color = color_str
+        
+        # Place the agents
+        for agent in self.agents:
+            if self.agent_start_pos is not None and self.agent_start_dir is not None:
+                agent.state.pos = self.agent_start_pos
+                agent.state.dir = self.agent_start_dir
+            else:
+                self.place_agent(agent)
+    
+    def _generate_goal_positions(self, width, height, num_agents):
+        """
+        Generate positions for goals, trying to spread them out.
+        """
+        positions = []
+        
+        if num_agents == 2:
+            # Place goals at opposite corners
+            positions = [(width - 2, height - 2), (1, 1)]
+        elif num_agents == 3:
+            # Place goals at three corners/edges
+            positions = [(width - 2, height - 2), (1, 1), (width - 2, 1)]
+        elif num_agents == 4:
+            # Place goals at all four corners
+            positions = [(width - 2, height - 2), (1, 1), (width - 2, 1), (1, height - 2)]
+        else:
+            # For more agents, distribute randomly
+            for _ in range(num_agents):
+                pos = self.place_obj(None, reject_fn=lambda _, p: p in positions)
+                positions.append(pos)
+        
+        return positions[:num_agents]
+    
+    def handle_actions(self, actions):
+        """
+        Override to handle agent-specific goal collection.
+        """
+        rewards = {agent_index: 0 for agent_index in range(self.num_agents)}
+        
+        # Randomize agent action order
+        if self.num_agents == 1:
+            order = (0,)
+        else:
+            order = self.np_random.random(size=self.num_agents).argsort()
+        
+        # Track if all goals were just completed this step
+        all_collected_before = all(self.goals_collected)
+        
+        # Update agent states and handle goal collection
+        for i in order:
+            if i not in actions:
+                continue
+            
+            agent, action = self.agents[i], actions[i]
+            
+            if agent.state.terminated:
+                continue
+            
+            # Rotate left
+            if action == 0:  # Action.left
+                agent.state.dir = (agent.state.dir - 1) % 4
+            
+            # Rotate right
+            elif action == 1:  # Action.right
+                agent.state.dir = (agent.state.dir + 1) % 4
+            
+            # Move forward
+            elif action == 2:  # Action.forward
+                fwd_pos = agent.front_pos
+                fwd_obj = self.grid.get(*fwd_pos)
+                
+                if fwd_obj is None or fwd_obj.can_overlap():
+                    # Check for agent overlap if not allowed
+                    if not self.allow_agent_overlap:
+                        agent_present = np.bitwise_and.reduce(
+                            self.agent_states.pos == fwd_pos, axis=1).any()
+                        if agent_present:
+                            continue
+                    
+                    agent.state.pos = fwd_pos
+                    
+                    # Check if agent reached a goal
+                    if fwd_obj is not None and fwd_obj.type == Type.goal:
+                        # Check if this goal belongs to this agent
+                        if hasattr(fwd_obj, 'agent_id') and fwd_obj.agent_id == i:
+                            if not self.goals_collected[i]:
+                                # Agent collected their own goal
+                                self.goals_collected[i] = True
+                                fwd_obj.collected = True
+                                
+                                # Give individual reward with optional decay
+                                reward = self._calculate_reward(self.individual_reward)
+                                rewards[i] += reward
+                                
+                                # Check if all goals are now collected
+                                if all(self.goals_collected):
+                                    # Give team bonus to all agents
+                                    team_bonus = self._calculate_reward(self.team_bonus_reward)
+                                    for agent_idx in range(self.num_agents):
+                                        rewards[agent_idx] += team_bonus
+                                    
+                                    # Terminate all agents
+                                    self.agent_states.terminated = True
+            
+            # Other actions (pickup, drop, toggle, done) - not used in this environment
+            elif action in [3, 4, 5, 6]:
+                pass
+        
+        return rewards
+    
+    def _calculate_reward(self, base_reward):
+        """
+        Calculate reward with optional time decay.
+        """
+        if self.reward_decay:
+            decay_factor = 1.0 - self.decay_rate * (self.step_count / self.max_steps)
+            decay_factor = max(0.0, decay_factor)  # Ensure non-negative
+            return base_reward * decay_factor
+        else:
+            return base_reward
+    
+    def _reward(self):
+        """
+        Override default reward computation (not used in this environment).
+        """
+        return 0.0
