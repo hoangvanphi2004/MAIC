@@ -11,7 +11,7 @@ import torch
 import multigrid.envs
 from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 #from PDSAC import PDSACDiscreteAgent, ReplayBufferPDSAC 
-from PDSAC_joint_valid import PDSACReinforceAgent, ReplayBufferPDSAC
+from PDSAC_joint_valid import PDSAC, ReplayBuffer
 
 
 def smooth_curve(values, weight=0.9):
@@ -202,10 +202,10 @@ action_dim = env.action_space[0].n
 print("Num agents:", num_agents, "State dim:", state_dim, "Action dim:", action_dim)
 # agents = PDSACDiscreteAgent(num_agents, state_dim, action_dim, "cuda")
 # replay_buffer = ReplayBufferPDSAC()
-agents = PDSACReinforceAgent(num_agents, state_dim, action_dim)
-replay_buffer = ReplayBufferPDSAC(capacity=1_000_000)
+agents = PDSAC(num_agents, state_dim, action_dim)
+replay_buffer = ReplayBuffer(capacity=1_000_000)
 
-episodes = 5000
+episodes = 50000
 steps_per_episode = 40
 batch_size = 1024
 start_steps = 1000

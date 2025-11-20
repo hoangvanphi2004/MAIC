@@ -15,25 +15,18 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
-        self.num_agents = num_agents
-        self.action_dim = action_dim
         
-        # Input: all agents' observations concatenated
         self.fc1 = nn.Linear(num_agents * obs_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        # Output: single continuous action for joint action space
-        self.mean = nn.Linear(hidden_dim, 1)
-        self.log_std = nn.Linear(hidden_dim, 1)
+        self.mean = nn.Linear(hidden_dim, action_dim)
+        self.log_std = nn.Linear(hidden_dim, action_dim)
         
     def forward(self, obs):
-        # obs shape: (batch, num_agents, obs_dim)
-        # Flatten to (batch, num_agents * obs_dim)
-        if obs.dim() == 3:
-            obs = obs.reshape(obs.size(0), -1)
+        obs = obs.view(obs.size(0), -1)  # Flatten for joint input
         x = F.relu(self.fc1(obs))
         x = F.relu(self.fc2(x))
-        mean = self.mean(x)  # (batch, 1)
-        log_std = self.log_std(x)  # (batch, 1)
+        mean = self.mean(x)
+        log_std = self.log_std(x)
         log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         return mean, log_std
     
@@ -42,11 +35,11 @@ class Actor(nn.Module):
         std = log_std.exp()
         normal = Normal(mean, std)
         z = normal.rsample()
-        action = torch.tanh(z)  # (batch, 1)
+        action = torch.tanh(z)
         
         log_prob = normal.log_prob(z)
         log_prob -= torch.log(1 - action.pow(2) + epsilon)
-        # Already (batch, 1)
+        log_prob = log_prob.sum(1, keepdim=True)
         
         mean = torch.tanh(mean)
         return action, log_prob, mean
@@ -54,8 +47,7 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     def __init__(self, num_agents, obs_dim, action_dim, hidden_dim=256):
         super(Critic, self).__init__()
-        self.num_agents = num_agents
-        # Q1 - Input: all agents' observations + single joint action
+        # Q1
         self.fc1 = nn.Linear(num_agents * obs_dim + action_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.fc3 = nn.Linear(hidden_dim, 1)
@@ -66,12 +58,7 @@ class Critic(nn.Module):
         self.fc6 = nn.Linear(hidden_dim, 1)
         
     def forward(self, obs, action):
-        # obs shape: (batch, num_agents, obs_dim)
-        # action shape: (batch, 1) - single joint action
-        # Flatten obs to (batch, num_agents * obs_dim)
-        if obs.dim() == 3:
-            obs = obs.reshape(obs.size(0), -1)
-        
+        obs = obs.view(obs.size(0), -1)  # Flatten for joint input
         sa = torch.cat([obs, action], 1)
         
         q1 = F.relu(self.fc1(sa))
@@ -84,41 +71,27 @@ class Critic(nn.Module):
         
         return q1, q2
 
-class ReplayBufferPDSAC:
+class ReplayBuffer:
     def __init__(self, capacity):
         self.buffer = deque(maxlen=capacity)
     
     def push(self, obs, action, reward, next_obs, done):
-        """Store multi-agent transition
-        obs: (num_agents, obs_dim)
-        action: list of num_agents actions or joint action index
-        reward: scalar (team reward)
-        next_obs: (num_agents, obs_dim)
-        done: bool
-        """
         self.buffer.append((obs, action, reward, next_obs, done))
     
     def sample(self, batch_size):
-        batch = random.sample(self.buffer, batch_size)
-        obs, action, reward, next_obs, done = zip(*batch)
-        # Convert to numpy arrays with proper shapes
-        obs = np.array(obs)  # (batch, num_agents, obs_dim)
-        # action is list of individual actions, convert to joint action indices
-        action = np.array(action)  # (batch, num_agents) or (batch,)
-        reward = np.array(reward)  # (batch,)
-        next_obs = np.array(next_obs)  # (batch, num_agents, obs_dim)
-        done = np.array(done)  # (batch,)
-        return obs, action, reward, next_obs, done
+        obs, action, reward, next_obs, done = zip(*random.sample(self.buffer, batch_size))
+        return np.array(obs), np.array(action), np.array(reward), np.array(next_obs), np.array(done)
     
     def __len__(self):
         return len(self.buffer)
 
-class PDSACReinforceAgent:
-    def __init__(self, num_agents, obs_dim, action_dim, hidden_dim=128, lr=3e-3, gamma=0.99, tau=0.01, alpha=0.2, auto_entropy_tuning=True):
+class PDSAC:
+    def __init__(self, num_agents, obs_dim, action_dim, hidden_dim=256, lr=3e-3, gamma=0.99, tau=0.01, alpha=0.2, auto_entropy_tuning=True):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        # Store number of discrete actions, but use continuous action_dim=1 per agent
-        self.n_actions = action_dim
+        # Store number of discrete actions, but use continuous action_dim=1
+        self.n_actions = action_dim * num_agents
+        self.n_agent_actions = action_dim
         self.num_agents = num_agents
         continuous_action_dim = 1
         
@@ -146,55 +119,34 @@ class PDSACReinforceAgent:
         self.action_dim = continuous_action_dim
         
     def select_action(self, obs, evaluate=False):
-        """Select actions for all agents using joint action space
-        obs: (num_agents, obs_dim)
-        returns: list of discrete actions for each agent
-        """
-        obs = torch.FloatTensor(obs).unsqueeze(0).to(self.device)  # (1, num_agents, obs_dim)
+        obs = torch.FloatTensor(obs).unsqueeze(0).to(self.device)
         if evaluate:
             _, _, continuous_action = self.actor.sample(obs)
         else:
             continuous_action, _, _ = self.actor.sample(obs)
-        # Convert single continuous action to joint discrete action index
-        # continuous_action shape: (1, 1)
-        continuous_action = continuous_action.detach().cpu().numpy()[0, 0]  # scalar
-        
-        # Map continuous action [-1, 1] to joint discrete action space [0, action_dim^num_agents - 1]
-        joint_action_space_size = self.n_actions ** self.num_agents
-        joint_action_idx = int((continuous_action + 1) / 2 * (joint_action_space_size - 1))
-        joint_action_idx = np.clip(joint_action_idx, 0, joint_action_space_size - 1)
-        
-        # Decompose joint action index to individual agent actions
+        # Convert continuous action to discrete
+        continuous_action = continuous_action.detach().cpu().numpy()[0]
+        discrete_action = int((continuous_action[0] + 1) / 2 * (self.n_actions - 1))
+        discrete_action = np.clip(discrete_action, 0, self.n_actions - 1)
         discrete_actions = []
-        base = joint_action_idx
-        for _ in range(self.num_agents):
-            discrete_actions.append(base % self.n_actions)
-            base //= self.n_actions
-        
+        for i in range(self.num_agents):
+            agent_action = discrete_action % self.n_agent_actions
+            discrete_actions.append(agent_action)
+            discrete_action = discrete_action // self.n_agent_actions
         return discrete_actions
     
     def update(self, replay_buffer, batch_size):
         obs, action, reward, next_obs, done = replay_buffer.sample(batch_size)
         
-        # obs: (batch, num_agents, obs_dim)
-        # action: (batch, num_agents) - individual actions
         obs = torch.FloatTensor(obs).to(self.device)
-        
-        # Convert individual actions to joint action indices, then to continuous
-        joint_action_space_size = self.n_actions ** self.num_agents
-        joint_action_indices = []
-        for agent_actions in action:
-            # Convert list of agent actions to joint action index
-            joint_idx = 0
-            for i, a in enumerate(agent_actions):
-                joint_idx += a * (self.n_actions ** i)
-            joint_action_indices.append(joint_idx)
-        
-        # Convert joint action indices to continuous [-1, 1]
-        action_continuous = torch.FloatTensor(
-            [[(idx / (joint_action_space_size - 1)) * 2 - 1] for idx in joint_action_indices]
-        ).to(self.device)  # (batch, 1)
-        
+        action = torch.LongTensor(action).to(self.device)
+        # Convert discrete actions to continuous for the actor-critic
+        # action_continuous = torch.FloatTensor([[(a / (self.n_actions - 1)) * 2 - 1] for a in action]).to(self.device)
+        action_combined = torch.ones(batch_size).to(self.device)
+        for i in range(self.num_agents):
+            action_combined *= (action[:, i] * (self.n_agent_actions ** i))
+        action_continuous = torch.FloatTensor([[(a / (self.n_actions - 1)) * 2 - 1] for a in action_combined]).to(self.device)
+
         reward = torch.FloatTensor(reward).unsqueeze(1).to(self.device)
         next_obs = torch.FloatTensor(next_obs).to(self.device)
         done = torch.FloatTensor(done).unsqueeze(1).to(self.device)
@@ -215,9 +167,6 @@ class PDSACReinforceAgent:
         new_action, log_prob, _ = self.actor.sample(obs)
         q1_new, q2_new = self.critic(obs, new_action)
         q_new = torch.min(q1_new, q2_new)
-        
-        # Calculate entropy from log_prob
-        entropy = -log_prob.mean().item()
         
         # Update alpha if automatic entropy tuning is enabled
         if self.auto_entropy_tuning:
@@ -246,17 +195,17 @@ class PDSACReinforceAgent:
         avg_q2 = current_q2.mean().item()
         avg_q = (avg_q1 + avg_q2) / 2
         
+        # Calculate entropy
+        entropy = -log_prob.mean().item()
+        
         return {
             'actor_loss': actor_loss.item(),
             'critic_loss': critic_loss.item(),
             'avg_q': avg_q,
             'avg_q1': avg_q1,
             'avg_q2': avg_q2,
-            'q_new': q_new.mean().item(),
             'alpha': self.alpha,
             'alpha_loss': alpha_loss_value,
-            'target_q': target_q.mean().item(),
             'entropy': entropy,
-            'log_prob': log_prob.mean().item(),
             'reward': reward.mean().item()
         }
