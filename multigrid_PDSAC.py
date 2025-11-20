@@ -303,8 +303,8 @@ for ep in range(episodes):
         save_training_plots(training_metrics, plots_dir, ep)
         print(f"Plots saved to {plots_dir}")
     
-    if(ep % 200 == 199): env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3, render_mode="human")
-    else: env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
+    # if(ep % 200 == 199): env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3, render_mode="human")
+    # else: env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
     print(f"ep: {ep}, ep_rw: {ep_reward}")
 
 # Save final plots
