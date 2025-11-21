@@ -211,7 +211,7 @@ batch_size = 1024
 start_steps = 1000
 steps_per_update = 100
 updates_num = 4
-plot_interval = 100  # Save plots every N episodes
+plot_interval = 1000  # Save plots every N episodes
 
 rewards, test_rewards = [], []
 total_steps = 0
