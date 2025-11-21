@@ -205,7 +205,7 @@ print("Num agents:", num_agents, "State dim:", state_dim, "Action dim:", action_
 agents = PDSAC(num_agents, state_dim, action_dim)
 replay_buffer = ReplayBuffer(capacity=1_000_000)
 
-episodes = 10000
+episodes = 20000
 steps_per_episode = 40
 batch_size = 1024
 start_steps = 1000
