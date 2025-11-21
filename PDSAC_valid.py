@@ -86,7 +86,7 @@ class ReplayBuffer:
         return len(self.buffer)
 
 class PDSAC:
-    def __init__(self, num_agents, obs_dim, action_dim, hidden_dim=256, lr=1e-4, gamma=0.99, tau=0.1, alpha=0.2, auto_entropy_tuning=True):
+    def __init__(self, num_agents, obs_dim, action_dim, hidden_dim=256, lr=5e-4, gamma=0.99, tau=0.2, alpha=0.2, auto_entropy_tuning=True):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Store number of discrete actions, but use continuous action_dim=1
