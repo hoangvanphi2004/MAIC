@@ -207,7 +207,7 @@ replay_buffer = ReplayBuffer(capacity=1_000_000)
 
 episodes = 70000
 steps_per_episode = 40
-batch_size = 1024
+batch_size = 2048
 start_steps = 1000
 steps_per_update = 100
 updates_num = 4
