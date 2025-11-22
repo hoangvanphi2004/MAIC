@@ -108,7 +108,7 @@ class PDSAC:
         # Automatic entropy tuning
         self.auto_entropy_tuning = auto_entropy_tuning
         if self.auto_entropy_tuning:
-            self.target_entropy = -continuous_action_dim * num_agents  # Heuristic value
+            self.target_entropy = - num_agents ** action_dim  # Heuristic value
             self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
             self.alpha_optimizer = optim.Adam([self.log_alpha], lr=lr)
             self.alpha = self.log_alpha.exp().item()
