@@ -194,7 +194,7 @@ training_metrics = {
     'steps': []
 }
     
-env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
+env = gym.make('MultiGrid-MultiTargetEmpty-8x8-TurnForward-v0', num_agents=1)
 
 num_agents = len(env.observation_space)
 state_dim = np.prod(env.observation_space[0]['image'].shape)
@@ -205,7 +205,7 @@ print("Num agents:", num_agents, "State dim:", state_dim, "Action dim:", action_
 agents = PDSAC(num_agents, state_dim, action_dim)
 replay_buffer = ReplayBuffer(capacity=1_000_000)
 
-episodes = 70000
+episodes = 50000
 steps_per_episode = 40
 batch_size = 2048
 start_steps = 1000
