@@ -243,6 +243,10 @@ class MultiTargetEmptyEnv(MultiGridEnv):
             if self.agent_start_pos is not None and self.agent_start_dir is not None:
                 agent.state.pos = self.agent_start_pos
                 agent.state.dir = self.agent_start_dir
+            elif self.num_agents == 1:
+                # For single agent, use fixed starting position
+                agent.state.pos = (1, 1)
+                agent.state.dir = 0
             else:
                 self.place_agent(agent)
     
@@ -252,7 +256,10 @@ class MultiTargetEmptyEnv(MultiGridEnv):
         """
         positions = []
         
-        if num_agents == 2:
+        if num_agents == 1:
+            # Place goal at a fixed position for single agent
+            positions = [(width - 2, height - 2)]
+        elif num_agents == 2:
             # Place goals at opposite corners
             positions = [(width - 2, height - 2), (1, 1)]
         elif num_agents == 3:

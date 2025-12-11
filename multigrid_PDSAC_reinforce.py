@@ -69,9 +69,9 @@ def run_training(
         action_dim,
         num_agents=num_agents,
         hidden_dim=128,
-        lr=3e-4,
+        lr=1e-3,
         gamma=0.99,
-        tau=0.01,
+        tau=0.02,
         alpha=0.01,
         auto_entropy_tuning=False,
     )
@@ -193,6 +193,65 @@ def run_training(
                         print('Saved video to', vid_path)
                     except Exception as ex:
                         warnings.warn(f'Failed to write video: {ex}')
+                
+                # Update metricgrid after saving video
+                try:
+                    if plt is not None:
+                        fig, axes = plt.subplots(3, 2, figsize=(14, 10))
+                        (ax_reward, ax_policy), (ax_critic, ax_q), (ax_entropy, ax_alpha) = axes
+
+                        rewards = metrics.get('episode_rewards', [])
+                        if rewards:
+                            x = np.arange(len(rewards))
+                            ax_reward.plot(x, rewards, color='tab:blue', alpha=0.35, label='Episode Reward')
+                            ma = _moving_average(np.array(rewards), window=20)
+                            if ma.size:
+                                ax_reward.plot(np.arange(len(ma)) + 19, ma, color='tab:orange', label='20-ep MA')
+                            ax_reward.set_title('Episode Reward')
+                            ax_reward.legend()
+                            ax_reward.grid(True, alpha=0.3)
+
+                        policy_losses = metrics.get('actor_losses', [])
+                        if policy_losses:
+                            ax_policy.plot(policy_losses, marker='o', ms=3)
+                            ax_policy.set_title('Policy Loss (avg per log interval)')
+                            ax_policy.grid(True, alpha=0.3)
+
+                        critic_losses = metrics.get('critic_losses', [])
+                        if critic_losses:
+                            ax_critic.plot(critic_losses, marker='o', ms=3)
+                            ax_critic.set_title('Critic Loss (avg per log interval)')
+                            ax_critic.grid(True, alpha=0.3)
+
+                        q_values = metrics.get('q_values', [])
+                        if q_values:
+                            ax_q.plot(q_values, marker='o', ms=3)
+                            ax_q.set_title('Q-value (avg per log interval)')
+                            ax_q.grid(True, alpha=0.3)
+
+                        entropy_vals = metrics.get('entropies', [])
+                        if entropy_vals:
+                            ax_entropy.plot(entropy_vals, marker='o', ms=3)
+                            ax_entropy.set_title('Entropy (avg per episode)')
+                            ax_entropy.grid(True, alpha=0.3)
+                        else:
+                            ax_entropy.set_axis_off()
+
+                        alpha_vals = metrics.get('alpha_values', [])
+                        if alpha_vals:
+                            ax_alpha.plot(alpha_vals, marker='o', ms=3)
+                            ax_alpha.set_title('Alpha')
+                            ax_alpha.grid(True, alpha=0.3)
+                        else:
+                            ax_alpha.set_axis_off()
+
+                        plt.tight_layout()
+                        out = run_path / 'metrics_grid.png'
+                        plt.savefig(str(out), dpi=150)
+                        plt.close(fig)
+                        print('Saved metric plots to', out)
+                except Exception as e:
+                    warnings.warn(f'Failed to save metric plots: {e}')
 
     agent.save(str(run_path / 'model_final.pth'))
     print('Training finished. Saved final model.')
