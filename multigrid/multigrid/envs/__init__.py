@@ -33,6 +33,7 @@ from .blockedunlockpickup import BlockedUnlockPickupEnv
 from .empty import EmptyEnv
 from .locked_hallway import LockedHallwayEnv
 from .multitargetempty import MultiTargetEmptyEnv
+from .pass_spare import PassSparseEnv
 from .playground import PlaygroundEnv
 from .redbluedoors import RedBlueDoorsEnv
 
@@ -59,6 +60,7 @@ CONFIGURATIONS = {
     'MultiGrid-Playground-v0': (PlaygroundEnv, {}),
     'MultiGrid-RedBlueDoors-6x6-v0': (RedBlueDoorsEnv, {'size': 6}),
     'MultiGrid-RedBlueDoors-8x8-v0': (RedBlueDoorsEnv, {'size': 8}),
+    'MultiGrid-PassSparse-10x10-v0': (PassSparseEnv, {'size': 10, 'num_agents': 2}),
 }
 
 # Register environments with gymnasium

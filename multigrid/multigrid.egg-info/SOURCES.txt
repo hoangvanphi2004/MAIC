@@ -23,6 +23,7 @@ multigrid/envs/blockedunlockpickup.py
 multigrid/envs/empty.py
 multigrid/envs/locked_hallway.py
 multigrid/envs/multitargetempty.py
+multigrid/envs/pass_spare.py
 multigrid/envs/playground.py
 multigrid/envs/redbluedoors.py
 multigrid/pettingzoo/__init__.py
