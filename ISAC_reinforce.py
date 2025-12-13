@@ -68,12 +68,15 @@ class Actor(nn.Module):
 
         self.fc1 = nn.Linear(linear_input_size, action_dim)
 
-    def forward(self, state):
+    def forward(self, state, return_logits=False):
         x = state / 255.0
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = x.reshape(x.size(0), -1)
-        action_probs = F.softmax(self.fc1(x), dim=-1)
+        logits = self.fc1(x)
+        action_probs = F.softmax(logits, dim=-1)
+        if return_logits:
+            return action_probs, logits
         return action_probs
 
     def sample(self, state):
@@ -145,13 +148,15 @@ class Critic(nn.Module):
 
 class ISAC_REINFORCE:
     def __init__(self, state_shape, action_dim, num_agents=2, hidden_dim=128, lr=3e-4, gamma=0.99,
-                 tau=0.01, alpha=0.01, auto_entropy_tuning=False):
+                 tau=0.01, alpha=0.01, auto_entropy_tuning=False, reg_weight=0.001, critic_reg_weight=0.001):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.gamma = gamma
         self.tau = tau
         self.n_actions = action_dim
         self.num_agents = num_agents
+        self.reg_weight = reg_weight
+        self.critic_reg_weight = critic_reg_weight
 
         self.actors = [Actor(state_shape, action_dim, hidden_dim).to(self.device)
                        for _ in range(self.num_agents)]
@@ -165,7 +170,8 @@ class ISAC_REINFORCE:
                                for _ in range(self.num_agents)]
         for i in range(self.num_agents):
             self.critic_targets[i].load_state_dict(self.critics[i].state_dict())
-        self.critic_optimizers = [optim.Adam(critic.parameters(), lr=lr) 
+        # Add weight_decay for L2 regularization on critic weights
+        self.critic_optimizers = [optim.Adam(critic.parameters(), lr=lr, weight_decay=1e-5) 
                                   for critic in self.critics]
 
         self.auto_entropy_tuning = auto_entropy_tuning
@@ -239,10 +245,11 @@ class ISAC_REINFORCE:
 
         total_policy_loss = 0.0
         total_entropy = 0.0
+        total_reg = 0.0
         for a_i, actor in enumerate(self.actors):
             states_a = torch.FloatTensor(states_np[:, a_i]).permute(0, 3, 1, 2).to(self.device)
             actions_a = torch.LongTensor(actions_np[:, a_i]).to(self.device)
-            action_probs = actor(states_a)
+            action_probs, logits = actor(states_a, return_logits=True)
             dist = Categorical(action_probs)
             new_log_probs = dist.log_prob(actions_a)
             entropy = dist.entropy().mean()
@@ -252,7 +259,11 @@ class ISAC_REINFORCE:
             else:
                 returns_a = returns[:, a_i].to(self.device)
             alpha = self.alpha.detach() if isinstance(self.alpha, torch.Tensor) else self.alpha
-            policy_loss_a = -(new_log_probs * returns_a).mean() - alpha * entropy
+            
+            # L2 regularization on logits
+            reg_term = (logits ** 2).mean()
+            
+            policy_loss_a = -(new_log_probs * returns_a).mean() - alpha * entropy + self.reg_weight * reg_term
             
             # Update each actor independently
             self.actor_optimizers[a_i].zero_grad()
@@ -262,6 +273,7 @@ class ISAC_REINFORCE:
             
             total_policy_loss += policy_loss_a.item()
             total_entropy += entropy.item()
+            total_reg += reg_term.item()
 
         rewards_arr = np.array(episode_memory.rewards)
         try:
@@ -272,6 +284,7 @@ class ISAC_REINFORCE:
         return {
             'policy_loss': total_policy_loss / self.num_agents,
             'entropy': total_entropy / float(self.num_agents),
+            'regularization': total_reg / self.num_agents,
             'avg_return': avg_return
         }
 
@@ -290,6 +303,7 @@ class ISAC_REINFORCE:
 
         total_critic_loss = 0.0
         total_q_value = 0.0
+        total_critic_reg = 0.0
         
         # Update each agent's critic independently
         for agent_id in range(self.num_agents):
@@ -316,8 +330,14 @@ class ISAC_REINFORCE:
             action_oh_i = F.one_hot(action_i.long(), num_classes=self.n_actions).float()
             q1, q2 = self.critics[agent_id](state_i, action_oh_i)
             
-            # Critic loss
-            critic_loss = F.mse_loss(q1, target_q_value) + F.mse_loss(q2, target_q_value)
+            # Critic MSE loss
+            critic_mse_loss = F.mse_loss(q1, target_q_value) + F.mse_loss(q2, target_q_value)
+            
+            # Q-value regularization (prevent Q-values from growing too large)
+            q_reg = (q1 ** 2).mean() + (q2 ** 2).mean()
+            
+            # Total critic loss
+            critic_loss = critic_mse_loss + self.critic_reg_weight * q_reg
             
             # Update critic
             self.critic_optimizers[agent_id].zero_grad()
@@ -332,6 +352,7 @@ class ISAC_REINFORCE:
             
             total_critic_loss += critic_loss.item()
             total_q_value += q1.mean().item()
+            total_critic_reg += q_reg.item()
 
         # Update alpha (shared across agents)
         alpha_info = {}
@@ -359,7 +380,8 @@ class ISAC_REINFORCE:
 
         result = {
             'critic_loss': total_critic_loss / self.num_agents,
-            'q_value': total_q_value / self.num_agents
+            'q_value': total_q_value / self.num_agents,
+            'critic_regularization': total_critic_reg / self.num_agents
         }
         result.update(alpha_info)
         return result
