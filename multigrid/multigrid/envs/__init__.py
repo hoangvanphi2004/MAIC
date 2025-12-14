@@ -60,7 +60,7 @@ CONFIGURATIONS = {
     'MultiGrid-Playground-v0': (PlaygroundEnv, {}),
     'MultiGrid-RedBlueDoors-6x6-v0': (RedBlueDoorsEnv, {'size': 6}),
     'MultiGrid-RedBlueDoors-8x8-v0': (RedBlueDoorsEnv, {'size': 8}),
-    'MultiGrid-PassSparse-10x10-v0': (PassSparseEnv, {'size': 10, 'num_agents': 2}),
+    'MultiGrid-PassSparse-8x8-v0': (PassSparseEnv, {'size': 8, 'num_agents': 2}),
 }
 
 # Register environments with gymnasium

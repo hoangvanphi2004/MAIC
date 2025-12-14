@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
-from gym.spaces import Box, Discrete
+from gymnasium.spaces import Box, Discrete
 from pathlib import Path
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
@@ -134,7 +134,7 @@ def run(config):
     torch.manual_seed(run_num)
     np.random.seed(run_num)
     # Num agent lager than 3
-    env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
+    env = gym.make('MultiGrid-PassSparse-8x8-v0', num_agents=3)
     # print("env observation space:", env.observation_space)
     # print("env action space:", env.action_space)
     model = AttentionSAC.init_from_env(env,
@@ -266,7 +266,7 @@ if __name__ == '__main__':
                              "model/training contents")
     parser.add_argument("--n_rollout_threads", default=1, type=int)
     parser.add_argument("--buffer_length", default=int(1e6), type=int)
-    parser.add_argument("--n_episodes", default=30000, type=int)
+    parser.add_argument("--n_episodes", default=50000, type=int)
     parser.add_argument("--episode_length", default=40, type=int)
     parser.add_argument("--steps_per_update", default=100, type=int)
     parser.add_argument("--num_updates", default=4, type=int,
@@ -274,8 +274,8 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size",
                         default=1024, type=int,
                         help="Batch size for training")
-    parser.add_argument("--save_interval", default=1000, type=int)
-    parser.add_argument("--plot_interval", default=100, type=int,
+    parser.add_argument("--save_interval", default=10000, type=int)
+    parser.add_argument("--plot_interval", default=10000, type=int,
                         help="Interval for saving training plots")
     parser.add_argument("--pol_hidden_dim", default=128, type=int)
     parser.add_argument("--critic_hidden_dim", default=128, type=int)

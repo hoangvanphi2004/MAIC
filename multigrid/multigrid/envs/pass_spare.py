@@ -60,6 +60,7 @@ class PassSparseEnv(MultiGridEnv):
         self.right_switch_pos = None
         self.door_pos = None
         self.door_obj: Door | None = None
+        self._door_open_cached = False  # cache to avoid redundant grid updates
 
         super().__init__(
             mission_space=(
@@ -97,17 +98,20 @@ class PassSparseEnv(MultiGridEnv):
         door = Door(is_open=False, is_locked=False)
         self.put_obj(door, *self.door_pos)
         self.door_obj = door
+        self._door_open_cached = False
 
-        # Place switches: one in each room
-        self.left_switch_pos = (self.split_x // 2, mid_y)
-        self.right_switch_pos = (width - 2 - (self.split_x // 2), mid_y)
+        # Place switches: one in each room (avoid overlapping door on small grids)
+        left_x = max(1, self.split_x // 2)
+        right_x = max(self.split_x + 1, width - 3)
+        self.left_switch_pos = (left_x, mid_y)
+        self.right_switch_pos = (right_x, mid_y)
         self.put_obj(Switch(), *self.left_switch_pos)
         self.put_obj(Switch(), *self.right_switch_pos)
 
-        # Place agents in the left room, fixed positions
+        # Place agents in the left room, fixed positions (keep inside bounds)
         start_positions = [
-            (2, mid_y - 2),
-            (3, mid_y + 2),
+            (1, max(1, mid_y - 1)),
+            (2, min(height - 2, mid_y + 1)),
         ]
         for i, agent in enumerate(self.agents):
             px, py = start_positions[i % len(start_positions)]
@@ -121,9 +125,10 @@ class PassSparseEnv(MultiGridEnv):
             if tuple(st) == self.left_switch_pos or tuple(st) == self.right_switch_pos:
                 occupied = True
                 break
-        if self.door_obj is not None:
+        # Only touch grid when state changes to avoid per-step overhead
+        if self.door_obj is not None and occupied != self._door_open_cached:
             self.door_obj.is_open = occupied
-            # update grid visual/state
+            self._door_open_cached = occupied
             self.grid.update(*self.door_pos)
 
     def _both_in_right_room(self) -> bool:
