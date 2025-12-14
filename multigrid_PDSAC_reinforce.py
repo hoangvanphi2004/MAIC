@@ -1,5 +1,6 @@
 import time
 import warnings
+import json
 from pathlib import Path
 
 import gymnasium as gym
@@ -254,6 +255,15 @@ def run_training(
                     warnings.warn(f'Failed to save metric plots: {e}')
 
     agent.save(str(run_path / 'model_final.pth'))
+    
+    rewards_path = run_path / 'episode_rewards.json'
+    with open(rewards_path, 'w') as f:
+        json.dump({
+            'episodes': list(range(len(metrics['episode_rewards']))),
+            'rewards': metrics['episode_rewards']
+        }, f, indent=2)
+    print(f'Rewards saved to {rewards_path}')
+    
     print('Training finished. Saved final model.')
     try:
         if plt is None:

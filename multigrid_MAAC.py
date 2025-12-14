@@ -2,6 +2,7 @@ import argparse
 import gymnasium as gym
 import torch
 import os
+import json
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
@@ -251,6 +252,15 @@ def run(config):
     
     # Save final plots
     save_training_plots(training_metrics, plots_dir, config.n_episodes, final=True)
+    
+    rewards_path = run_dir / 'episode_rewards.json'
+    with open(rewards_path, 'w') as f:
+        json.dump({
+            'episodes': training_metrics['episodes'],
+            'rewards': training_metrics['episode_rewards']
+        }, f, indent=2)
+    print(f"Rewards saved to {rewards_path}")
+    
     print(f"\nFinal plots saved to {plots_dir}")
     
     env.close()
