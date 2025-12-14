@@ -162,22 +162,23 @@ class SimpleReplayBuffer:
 
 
 class QMIXAgent:
-    def __init__(self, num_agents, state_dim, action_dim, observation_dim, lr=1e-3, num_episodes=50000):
+    def __init__(self, num_agents, state_dim, action_dim, observation_dim, lr=3e-4, num_episodes=50000):
         self.q_net = SimpleQMIXNetwork(num_agents, state_dim, observation_dim, action_dim)
         self.target_net = SimpleQMIXNetwork(num_agents, state_dim, observation_dim, action_dim)
         self.target_net.load_state_dict(self.q_net.state_dict())
         self.optimizer = torch.optim.Adam(self.q_net.parameters(), lr=lr)
-        self.buffer = SimpleReplayBuffer(capacity=int(1e5))
+        self.buffer = SimpleReplayBuffer(capacity=int(5e5))
 
         self.epsilon = 1.0
-        self.epsilon_decay = (1 - 0.05) / (num_episodes * 0.8)
+        self.epsilon_decay = (1 - 0.05) / (num_episodes * 0.9)
         self.epsilon_min = 0.05
         self.gamma = 0.99
         self.action_dim = action_dim
-        self.batch_size = 1024
+        self.batch_size = 32
         self.num_agents = num_agents
         self.state_dim = state_dim
         self.observation_dim = observation_dim
+        self.tau = 0.005
 
     def select_action(self, available_actions, observations):
         """
@@ -208,7 +209,6 @@ class QMIXAgent:
             return
         
         states, actions, rewards, next_states, dones = self.buffer.sample(self.batch_size)
-        
         single_obs_dim = self.state_dim // self.num_agents
         obs_reshaped = states.reshape(self.batch_size, self.num_agents, single_obs_dim)
         next_obs_reshaped = next_states.reshape(self.batch_size, self.num_agents, single_obs_dim)
@@ -227,10 +227,14 @@ class QMIXAgent:
         
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=10)
+        torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=1.0)
         self.optimizer.step()
         
         return {'loss': loss.item(), 'q_value': q_tot.mean().item()}
 
-    def update_target(self):
-        self.target_net.load_state_dict(self.q_net.state_dict())
+    def update_target(self, soft=False):
+        if soft:
+            for target_param, param in zip(self.target_net.parameters(), self.q_net.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+        else:
+            self.target_net.load_state_dict(self.q_net.state_dict())

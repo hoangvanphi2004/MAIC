@@ -224,8 +224,7 @@ def run_qmix_training(
         num_agents=num_agents,
         state_dim=state_dim,
         action_dim=action_dim,
-        observation_dim=single_obs_dim + num_agents,  # Per-agent obs with ID
-        lr=1e-3,
+        observation_dim=single_obs_dim + num_agents,
         num_episodes=episodes
     )
 
@@ -291,15 +290,16 @@ def run_qmix_training(
             ep_reward += reward
             ep_length += 1
             
-            # Train
             if total_steps > train_start and total_steps % update_interval == 0:
-                for _ in range(4):  # Multiple updates per interval
+                for _ in range(4):
                     train_info = agent.train()
                     if train_info:
                         training_metrics['q_losses'].append(train_info['loss'])
                         training_metrics['q_values'].append(train_info['q_value'])
                         training_metrics['training_steps'].append(total_steps)
-                agent.update_target()
+                
+                if total_steps % 500 == 0:
+                    agent.update_target()
             
             if done:
                 break
