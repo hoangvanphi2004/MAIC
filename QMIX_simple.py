@@ -162,7 +162,7 @@ class SimpleReplayBuffer:
 
 
 class QMIXAgent:
-    def __init__(self, num_agents, state_dim, action_dim, observation_dim, lr=3e-4, num_episodes=50000):
+    def __init__(self, num_agents, state_dim, action_dim, observation_dim, lr=1e-4, num_episodes=50000):
         self.q_net = SimpleQMIXNetwork(num_agents, state_dim, observation_dim, action_dim)
         self.target_net = SimpleQMIXNetwork(num_agents, state_dim, observation_dim, action_dim)
         self.target_net.load_state_dict(self.q_net.state_dict())
