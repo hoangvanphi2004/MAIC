@@ -224,7 +224,9 @@ def run_qmix_training(
         num_agents=num_agents,
         state_dim=state_dim,
         action_dim=action_dim,
-        observation_dim=single_obs_dim + num_agents  # Per-agent obs with ID
+        observation_dim=single_obs_dim + num_agents,  # Per-agent obs with ID
+        lr=1e-3,
+        num_episodes=episodes
     )
 
     total_steps = 0
@@ -367,7 +369,7 @@ if __name__ == '__main__':
         episodes=50000,
         steps_per_episode=40,
         train_start=1000,
-        update_interval=40,
+        update_interval=100,
         plot_interval=5000,
         save_interval=5000,
         env_id='MultiGrid-MultiTargetEmpty-8x8-v0',

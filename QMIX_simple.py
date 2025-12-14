@@ -162,15 +162,15 @@ class SimpleReplayBuffer:
 
 
 class QMIXAgent:
-    def __init__(self, num_agents, state_dim, action_dim, observation_dim):
+    def __init__(self, num_agents, state_dim, action_dim, observation_dim, lr=1e-3, num_episodes=50000):
         self.q_net = SimpleQMIXNetwork(num_agents, state_dim, observation_dim, action_dim)
         self.target_net = SimpleQMIXNetwork(num_agents, state_dim, observation_dim, action_dim)
         self.target_net.load_state_dict(self.q_net.state_dict())
-        self.optimizer = torch.optim.Adam(self.q_net.parameters(), lr=1e-3)
+        self.optimizer = torch.optim.Adam(self.q_net.parameters(), lr=lr)
         self.buffer = SimpleReplayBuffer(capacity=int(1e5))
 
         self.epsilon = 1.0
-        self.epsilon_decay = (1 - 0.05) / 40000
+        self.epsilon_decay = (1 - 0.05) / (num_episodes * 0.8)
         self.epsilon_min = 0.05
         self.gamma = 0.99
         self.action_dim = action_dim
