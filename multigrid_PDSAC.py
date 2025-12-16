@@ -2,6 +2,7 @@ import numpy as np
 import gymnasium as gym
 import time
 import os
+import json
 from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
@@ -194,7 +195,7 @@ training_metrics = {
     'steps': []
 }
     
-env = gym.make('MultiGrid-MultiTargetEmpty-8x8-TurnForward-v0', num_agents=1)
+env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
 
 num_agents = len(env.observation_space)
 state_dim = np.prod(env.observation_space[0]['image'].shape)
@@ -303,12 +304,21 @@ for ep in range(episodes):
         save_training_plots(training_metrics, plots_dir, ep)
         print(f"Plots saved to {plots_dir}")
     
-    # if(ep % 200 == 199): env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3, render_mode="human")
-    # else: env = gym.make('MultiGrid-MultiTargetEmpty-8x8-v0', num_agents=3)
+    # if(ep % 200 == 0): env = gym.make('MultiGrid-MultiTargetEmpty-8x8-TurnForward-v0', num_agents=1, render_mode="human")
+    # else: env = gym.make('MultiGrid-MultiTargetEmpty-8x8-TurnForward-v0', num_agents=1)
     print(f"ep: {ep}, ep_rw: {ep_reward}")
 
 # Save final plots
 print("\nSaving final training plots...")
 save_training_plots(training_metrics, plots_dir, episodes, final=True)
+
+rewards_path = run_dir / 'episode_rewards.json'
+with open(rewards_path, 'w') as f:
+    json.dump({
+        'episodes': training_metrics['episodes'],
+        'rewards': training_metrics['episode_rewards']
+    }, f, indent=2)
+print(f"Rewards saved to {rewards_path}")
+
 print(f"Final plots saved to {plots_dir}")
 print_training_summary(training_metrics)
