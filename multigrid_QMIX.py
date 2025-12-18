@@ -210,7 +210,7 @@ def run_qmix_training(
     }
 
     # Environment setup
-    env = gym.make(env_id, num_agents=num_agents)
+    env = gym.make(env_id, num_agents=num_agents, max_steps=steps_per_episode)
     num_agents = len(env.observation_space)
     single_obs_dim = np.prod(env.observation_space[0]['image'].shape)
     state_dim = single_obs_dim * num_agents  # Full state is all agents' obs concatenated

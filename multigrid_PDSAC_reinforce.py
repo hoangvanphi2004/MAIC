@@ -49,11 +49,11 @@ def run_training(
 
     if record_video:
         try:
-            env = gym.make(env_id, num_agents=num_agents, render_mode='rgb_array')
+            env = gym.make(env_id, num_agents=num_agents, render_mode='rgb_array', max_steps = steps_per_episode)
         except TypeError:
-            env = gym.make(env_id, num_agents=num_agents)
+            env = gym.make(env_id, num_agents=num_agents, max_steps = steps_per_episode)
     else:
-        env = gym.make(env_id, num_agents=num_agents)
+        env = gym.make(env_id, num_agents=num_agents, max_steps = steps_per_episode)
 
     obs0, _ = env.reset()
     first_obs = list(obs0.values())[0]
