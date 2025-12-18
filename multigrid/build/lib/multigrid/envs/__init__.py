@@ -48,8 +48,8 @@ CONFIGURATIONS = {
     'MultiGrid-LockedHallway-2Rooms-v0': (LockedHallwayEnv, {'num_rooms': 2}),
     'MultiGrid-LockedHallway-4Rooms-v0': (LockedHallwayEnv, {'num_rooms': 4}),
     'MultiGrid-LockedHallway-6Rooms-v0': (LockedHallwayEnv, {'num_rooms': 6}),
-    'MultiGrid-MultiTargetEmpty-8x8-v0': (MultiTargetEmptyEnv, {'size': 8, 'num_agents': 2}),
-    'MultiGrid-MultiTargetEmpty-16x16-v0': (MultiTargetEmptyEnv, {'size': 16, 'num_agents': 2}),
+    'MultiGrid-MultiTargetEmpty-8x8-v0': (MultiTargetEmptyEnv, {'size': 8}),
+    'MultiGrid-MultiTargetEmpty-16x16-v0': (MultiTargetEmptyEnv, {'size': 16}),
     'MultiGrid-MultiTargetEmpty-3Agent-12x12-v0': (MultiTargetEmptyEnv, {'size': 12, 'num_agents': 3}),
     'MultiGrid-MultiTargetEmpty-4Agent-16x16-v0': (MultiTargetEmptyEnv, {'size': 16, 'num_agents': 4}),
     # Variants with restricted action space (only turn left and forward)

@@ -49,13 +49,15 @@ class MultiTargetEmptyEnv(MultiGridEnv):
     ***********
     
     This environment is an empty room where each agent has their own colored goal.
-    Each agent receives a reward when they reach their own goal (individual reward).
-    Once all agents have reached their goals, all agents receive a large team bonus reward.
+    Any agent can collect any goal and, upon collection, that goal disappears
+    from the grid. The collecting agent receives an individual reward. Once all
+    goals are collected, all agents receive a large team bonus reward.
     
     Features:
-    - Each agent has a uniquely colored goal
-    - Agents can only collect their own goals
-    - Individual reward for reaching own goal
+    - All goals are yellow colored
+    - Any agent can collect any goal
+    - Collected goals disappear from the grid
+    - Individual reward for collecting a goal
     - Team bonus reward when all goals are collected
     - Optional reward decay based on number of steps
     
@@ -63,7 +65,7 @@ class MultiTargetEmptyEnv(MultiGridEnv):
     Mission Space
     *************
     
-    "reach your colored goal and help the team collect all goals"
+    "collect all goals together as a team"
     
     *****************
     Observation Space
@@ -186,9 +188,10 @@ class MultiTargetEmptyEnv(MultiGridEnv):
         # Track which agents have collected their goals
         self.goals_collected = None
         self.agent_goals = {}  # Maps agent_id to their goal object
+        self.remaining_goals = 0  # Count of goals left on the grid
         
         super().__init__(
-            mission_space="reach your colored goal and help the team collect all goals",
+            mission_space="collect all goals together as a team",
             agents=num_agents,
             grid_size=size,
             max_steps=max_steps or (4 * size**2),
@@ -216,27 +219,31 @@ class MultiTargetEmptyEnv(MultiGridEnv):
         # Reset goal collection tracking
         self.goals_collected = [False] * self.num_agents
         self.agent_goals = {}
+        self.remaining_goals = self.num_agents
         
-        # Get available colors for goals - use .value to get string from Color enum
-        color_list = ['red', 'green', 'blue', 'purple', 'yellow', 'grey']
+        # Color palettes
+        agent_color_list = ['red', 'green', 'blue', 'purple', 'yellow', 'grey']
+        goal_color_list = ['red', 'green', 'blue', 'purple', 'yellow', 'grey']
         
         # Place agent-specific goals at different positions
         goal_positions = self._generate_goal_positions(width, height, self.num_agents)
         
         for i, agent in enumerate(self.agents):
-            # Get color for this agent (cycle through available colors)
-            color_str = color_list[i % len(color_list)]
-            
+            # Agent appearance color (unique per agent)
+            agent_color_str = agent_color_list[i % len(agent_color_list)]
+            # All goals use yellow color
+            goal_color_str = 'yellow'
+
             # Create a goal for this agent
-            goal = AgentGoal(agent_id=i, color=color_str)
+            goal = AgentGoal(agent_id=i, color=goal_color_str)
             
             # Place the goal
             pos = goal_positions[i]
             self.put_obj(goal, pos[0], pos[1])
             self.agent_goals[i] = goal
             
-            # Set agent color to match their goal
-            agent.color = color_str
+            # Set agent color to a unique color (decoupled from goal color)
+            agent.color = agent_color_str
         
         # Place the agents
         for agent in self.agents:
@@ -278,7 +285,7 @@ class MultiTargetEmptyEnv(MultiGridEnv):
     
     def handle_actions(self, actions):
         """
-        Override to handle agent-specific goal collection.
+        Override to handle goal collection: any agent can collect any goal.
         """
         rewards = {agent_index: 0 for agent_index in range(self.num_agents)}
         
@@ -341,26 +348,32 @@ class MultiTargetEmptyEnv(MultiGridEnv):
                     
                     # Check if agent reached a goal
                     if fwd_obj is not None and fwd_obj.type == Type.goal:
-                        # Check if this goal belongs to this agent
-                        if hasattr(fwd_obj, 'agent_id') and fwd_obj.agent_id == i:
-                            if not self.goals_collected[i]:
-                                # Agent collected their own goal
-                                self.goals_collected[i] = True
-                                fwd_obj.collected = True
-                                
-                                # Give individual reward with optional decay
-                                reward = self._calculate_reward(self.individual_reward)
-                                rewards[i] += reward
-                                
-                                # Check if all goals are now collected
-                                if all(self.goals_collected):
-                                    # Give team bonus to all agents
-                                    team_bonus = self._calculate_reward(self.team_bonus_reward)
-                                    for agent_idx in range(self.num_agents):
-                                        rewards[agent_idx] += team_bonus
-                                    
-                                    # Terminate all agents
-                                    self.agent_states.terminated = True
+                        if getattr(fwd_obj, 'collected', False):
+                            continue
+
+                        owner_id = getattr(fwd_obj, 'agent_id', None)
+                        # Mark collected flags
+                        if owner_id is not None and not self.goals_collected[owner_id]:
+                            self.goals_collected[owner_id] = True
+                        fwd_obj.collected = True
+                        self.remaining_goals = max(0, self.remaining_goals - 1)
+
+                        # Remove the goal from the grid upon collection
+                        self.grid.set(fwd_pos[0], fwd_pos[1], None)
+
+                        # Give individual reward with optional decay to the collecting agent
+                        reward = self._calculate_reward(self.individual_reward)
+                        rewards[i] += reward
+
+                        # Check if all goals are now collected
+                        if self.remaining_goals == 0:
+                            # Give team bonus to all agents
+                            team_bonus = self._calculate_reward(self.team_bonus_reward)
+                            for agent_idx in range(self.num_agents):
+                                rewards[agent_idx] += team_bonus
+
+                            # Terminate all agents
+                            self.agent_states.terminated = True
             
             # Other actions (pickup, drop, toggle, done) - not used in this environment
             elif action in [3, 4, 5, 6]:
