@@ -59,7 +59,7 @@ class MultiTargetEmptyEnv(MultiGridEnv):
     - Collected goals disappear from the grid
     - Individual reward for collecting a goal
     - Team bonus reward when all goals are collected
-    - Optional reward decay based on number of steps
+    - Small step penalty when no reward is received in a timestep
     
     *************
     Mission Space
@@ -114,9 +114,9 @@ class MultiTargetEmptyEnv(MultiGridEnv):
     Rewards
     *******
     
-    - Individual reward: ``individual_reward * decay_factor`` when agent reaches their goal
+    - Individual reward: ``individual_reward`` when agent reaches their goal
     - Team bonus: ``team_bonus_reward`` when all agents reach their goals
-    - Decay factor: ``1 - decay_rate * (step_count / max_steps)`` if reward_decay=True
+    - Step penalty: ``-step_penalty`` each timestep an agent receives no reward
     
     ***********
     Termination
@@ -144,8 +144,7 @@ class MultiTargetEmptyEnv(MultiGridEnv):
         max_steps: int | None = None,
         individual_reward: float = 1.0,
         team_bonus_reward: float = 5.0,
-        reward_decay: bool = True,
-        decay_rate: float = 0.9,
+        step_penalty: float = 0.1,
         only_turn_and_forward: bool = False,
         **kwargs):
         """
@@ -165,10 +164,8 @@ class MultiTargetEmptyEnv(MultiGridEnv):
             Reward given to an agent when they reach their own goal
         team_bonus_reward : float, default=5.0
             Bonus reward given to all agents when all goals are collected
-        reward_decay : bool, default=True
-            Whether to apply time-based decay to rewards
-        decay_rate : float, default=0.9
-            Rate of reward decay (0-1), applied as: 1 - decay_rate * (step_count / max_steps)
+        step_penalty : float, default=0.01
+            Small penalty subtracted each timestep an agent receives no reward
         **kwargs
             See :attr:`multigrid.base.MultiGridEnv.__init__`
         """
@@ -176,8 +173,7 @@ class MultiTargetEmptyEnv(MultiGridEnv):
         self.agent_start_dir = agent_start_dir
         self.individual_reward = individual_reward
         self.team_bonus_reward = team_bonus_reward
-        self.reward_decay = reward_decay
-        self.decay_rate = decay_rate
+        self.step_penalty = step_penalty
         # If True, limit the per-agent action space to two actions:
         # 0 -> turn (left)
         # 1 -> move forward
@@ -288,6 +284,7 @@ class MultiTargetEmptyEnv(MultiGridEnv):
         Override to handle goal collection: any agent can collect any goal.
         """
         rewards = {agent_index: 0 for agent_index in range(self.num_agents)}
+        got_reward_step = [False] * self.num_agents
         
         # Randomize agent action order
         if self.num_agents == 1:
@@ -364,6 +361,8 @@ class MultiTargetEmptyEnv(MultiGridEnv):
                         # Give individual reward with optional decay to the collecting agent
                         reward = self._calculate_reward(self.individual_reward)
                         rewards[i] += reward
+                        got_reward_step[i] = True
+                        #print(f"agent {i} collected goal of agent {owner_id}, reward: {reward:.2f}, step_count: {self.step_count}, max_steps: {self.max_steps}")
 
                         # Check if all goals are now collected
                         if self.remaining_goals == 0:
@@ -371,6 +370,9 @@ class MultiTargetEmptyEnv(MultiGridEnv):
                             team_bonus = self._calculate_reward(self.team_bonus_reward)
                             for agent_idx in range(self.num_agents):
                                 rewards[agent_idx] += team_bonus
+                                got_reward_step[agent_idx] = True
+                            #print(f"team bonus reward {team_bonus} granted to all agents!, step_count: {self.step_count}, max_steps: {self.max_steps}")
+
 
                             # Terminate all agents
                             self.agent_states.terminated = True
@@ -379,18 +381,18 @@ class MultiTargetEmptyEnv(MultiGridEnv):
             elif action in [3, 4, 5, 6]:
                 pass
         
+        # Apply step penalty to agents that received no reward this step
+        for idx in range(self.num_agents):
+            if not got_reward_step[idx]:
+                rewards[idx] -= self.step_penalty
+        
         return rewards
     
     def _calculate_reward(self, base_reward):
         """
-        Calculate reward with optional time decay.
+        Calculate reward (no decay; decay replaced by step penalty).
         """
-        if self.reward_decay:
-            decay_factor = 1.0 - self.decay_rate * (self.step_count / self.max_steps)
-            decay_factor = max(0.0, decay_factor)  # Ensure non-negative
-            return base_reward * decay_factor
-        else:
-            return base_reward
+        return base_reward
     
     def _reward(self):
         """
