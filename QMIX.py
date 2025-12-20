@@ -98,7 +98,7 @@ class QMIX:
         self.tau = tau
         self.epsilon = 1.0
         self.eps_min = 0.05
-        self.eps_decay = 1e-4
+        self.eps_decay = 3e-4
         self.share_agent = share_agent
         self._agent_hidden = hidden_dim
 

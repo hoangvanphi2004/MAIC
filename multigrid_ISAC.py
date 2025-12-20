@@ -8,7 +8,7 @@ import multigrid.envs
 import numpy as np
 import torch
 
-from ISAC_reinforce import EpisodeMemory, ReplayBuffer, ISAC_REINFORCE
+from ISAC_reinforce_off_policy import EpisodeMemory, ReplayBuffer, ISAC_REINFORCE
 
 try:
     import matplotlib.pyplot as plt
@@ -328,11 +328,11 @@ def run_training(
 
 if __name__ == '__main__':
     run_training(
-        episodes=50000,
+        episodes=10000,
         steps_per_episode=40,
         batch_size=1024,
         updates_num=4,
-        save_every=5000,
-        video_every=5000,
+        save_every=500,
+        video_every=500,
         record_video=True,
     )

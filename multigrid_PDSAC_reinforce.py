@@ -8,7 +8,7 @@ import multigrid.envs
 import numpy as np
 import torch
 
-from PDSAC_valid_reinforce import EpisodeMemory, ReplayBuffer, SAC_REINFORCE
+from PDSAC_valid_reinforce_off_policy import EpisodeMemory, ReplayBuffer, SAC_REINFORCE
 
 try:
     import matplotlib.pyplot as plt
@@ -73,7 +73,7 @@ def run_training(
         lr=1e-3,
         gamma=0.99,
         tau=0.02,
-        alpha=0.01,
+        alpha=0.02,
         auto_entropy_tuning=False,
     )
     replay_buffer = ReplayBuffer(capacity=replay_size)
@@ -327,11 +327,11 @@ def run_training(
 
 if __name__ == '__main__':
     run_training(
-        episodes=50000,
+        episodes=10000,
         steps_per_episode=40,
         batch_size=1024,
         updates_num=4,
-        save_every=5000,
-        video_every=5000,
+        save_every=500,
+        video_every=500,
         record_video=True,
     )

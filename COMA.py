@@ -288,34 +288,7 @@ class COMA:
         
         states_np = np.array(episode_memory.states)
         actions_np = np.array(episode_memory.actions)
-        rewards_np = np.array(episode_memory.rewards)
-        
-        # Compute returns (trajectory-based)
-        T = len(episode_memory)
-        returns = np.zeros_like(rewards_np, dtype=np.float32)
-        
-        if rewards_np.ndim == 1:
-            R = 0.0
-            for t in range(T - 1, -1, -1):
-                R = rewards_np[t] + self.gamma * R
-                returns[t] = R
-        else:
-            for a in range(self.num_agents):
-                R = 0.0
-                for t in range(T - 1, -1, -1):
-                    R = rewards_np[t] + self.gamma * R
-                    returns[t] = R
-        
-        returns = torch.FloatTensor(returns).to(self.device)
-        
-        # Normalize returns
-        if returns.dim() > 0 and len(returns) > 1:
-            if returns.dim() == 1:
-                returns = (returns - returns.mean()) / (returns.std() + 1e-8)
-            else:
-                mean = returns.mean(dim=0, keepdim=True)
-                std = returns.std(dim=0, keepdim=True) + 1e-8
-                returns = (returns - mean) / std
+        # Removed unused returns computation and related code
         
         states_tensor = torch.FloatTensor(states_np).permute(0, 1, 4, 2, 3).to(self.device)
         actions_tensor = torch.LongTensor(actions_np).to(self.device)
@@ -344,16 +317,12 @@ class COMA:
                 )
                 q_counterfactual = q_counterfactual.squeeze(-1)
             
-            # Counterfactual advantage
+            # Counterfactual advantage (COMA paper): A_i = Q(s,u) - sum_{a'} pi(a'|o_i) Q(s, u^{-i}, a')
             advantage = q_actual - q_counterfactual
             
-            if returns.dim() > 1:
-                adv_target = returns[:, agent_i] + advantage
-            else:
-                adv_target = returns + advantage
-            
             # Policy gradient
-            policy_loss_i = -(log_probs_i * adv_target.detach()).mean()
+            # Policy gradient with counterfactual advantage only (COMA)
+            policy_loss_i = -(log_probs_i * advantage.detach()).mean()
             total_policy_loss += policy_loss_i
         
         self.policy_optimizer.zero_grad()
@@ -364,8 +333,6 @@ class COMA:
         self.policy_optimizer.step()
         
         return {'policy_loss': total_policy_loss.item()}
-
-
 
     def save(self, filename):
         torch.save({

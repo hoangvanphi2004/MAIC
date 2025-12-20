@@ -297,11 +297,11 @@ def run_training(
 
 if __name__ == '__main__':
     run_training(
-        episodes=50000,
+        episodes=10000,
         steps_per_episode=40,
         batch_size=1024,
         updates_num=4,
-        save_every=5000,
-        video_every=5000,
+        save_every=500,
+        video_every=500,
         record_video=True,
     )
