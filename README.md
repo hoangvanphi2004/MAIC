@@ -1,2 +1,2 @@
 # MAIC
-This repo is create to compare many MARL model
+This repo is created to compare many MARL model
