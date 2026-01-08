@@ -44,7 +44,7 @@ def train_sac_reinforce_cartpole():
 	BATCH_SIZE = 64
 	BUFFER_SIZE = 1000
 	UPDATE_CRITIC_FREQ = 10
-	HALLUCINATED_UPDATES = 100  # Number of hallucinated rollouts per episode
+	HALLUCINATED_UPDATES = 20  # Number of hallucinated rollouts per episode
 
 	env = gym.make(ENV_NAME, render_mode="rgb_array")
 	env = RecordVideo(
@@ -104,7 +104,7 @@ def train_sac_reinforce_cartpole():
 			episode_reward += reward
 			if done:
 				break
-		agent.train_ensemble_model(replay_buffer, batch_size=BATCH_SIZE, epochs=10)
+		agent.train_ensemble_model(replay_buffer, batch_size=BATCH_SIZE, epochs=20)
 		reward_history.append(episode_reward)
 		print(f"Episode: {episode}, Reward: {episode_reward}")
 
