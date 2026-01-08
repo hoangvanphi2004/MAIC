@@ -7,8 +7,6 @@ from torch.distributions import Categorical
 import gymnasium as gym
 from collections import deque
 import random
-import minigrid
-from minigrid.wrappers import ImgObsWrapper, RGBImgPartialObsWrapper
 import matplotlib.pyplot as plt
 from Bayesian_sampling import EnsembleRegressor
 
