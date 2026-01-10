@@ -147,7 +147,7 @@ class Value(nn.Module):
 
 class HUCRL:
 	def __init__(self, state_dim, action_dim, hidden_dim=128, lr=3e-4, gamma=0.99, 
-				 tau=0.01, alpha=0.01, auto_entropy_tuning=True, reward_function=None, done_function=None, num_ensembles=5, beta=1):
+				 tau=0.01, alpha1=0.01, alpha2=0.01, auto_entropy_tuning=True, reward_function=None, done_function=None, num_ensembles=5, beta=1):
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		self.gamma = gamma
 		self.tau = tau
@@ -171,11 +171,12 @@ class HUCRL:
 		self.auto_entropy_tuning = auto_entropy_tuning
 		if self.auto_entropy_tuning:
 			self.target_entropy = -float(action_dim)
-			self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
-			self.alpha_optimizer = optim.Adam([self.log_alpha], lr=lr)
-			self.alpha = self.log_alpha.exp()
+			self.log_alpha1 = torch.zeros(1, requires_grad=True, device=self.device)
+			self.alpha_optimizer = optim.Adam([self.log_alpha1], lr=lr)
+			self.alpha1 = self.log_alpha1.exp()
 		else:
-			self.alpha = alpha
+			self.alpha1 = alpha1
+		self.alpha2 = alpha2
 	def select_action(self, state, evaluate=False):
 		with torch.no_grad():
 			state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
@@ -273,11 +274,13 @@ class HUCRL:
 		# Get Q-values from critic as advantage
 		with torch.no_grad():
 			q_values = self.critic(states, actions, action_halucinate_tanh).squeeze(1)
+			info_bonus = self.information_bonus(states, actions).squeeze(1)
 		
-		# SAC policy loss: E[α * log_π - Q]
-		alpha = self.alpha.detach() if isinstance(self.alpha, torch.Tensor) else self.alpha
-		policy_loss_discrete = (alpha * new_log_probs_discrete - q_values.detach()).mean()
-		policy_loss_continuous = (alpha * log_prob_continuous - q_values.detach()).mean()
+		# SAC policy loss with information bonus: E[α1 * log_π - Q + α2 * info_bonus]
+		alpha1 = self.alpha1.detach() if isinstance(self.alpha1, torch.Tensor) else self.alpha1
+		alpha2 = self.alpha2
+		policy_loss_discrete = (alpha1 * new_log_probs_discrete - q_values.detach() + alpha2 * info_bonus.detach()).mean()
+		policy_loss_continuous = (alpha1 * log_prob_continuous - q_values.detach() + alpha2 * info_bonus.detach()).mean()
 		policy_loss = policy_loss_discrete + policy_loss_continuous
 		
 		# Update actor
@@ -294,8 +297,21 @@ class HUCRL:
 			'avg_q_value': q_values.mean().item(),
 		}
 		
+	def information_bonus(self, state, action):
+		"""Compute information gain using ensemble uncertainty
+		I_a(s,a) = sum_j log(1 + σ²_j(s,a) / σ²), where σ² = 1
+		"""
+		action_one_hot = F.one_hot(action, num_classes=self.action_dim).float()
+		ensemble_input = torch.cat([state, action_one_hot], dim=-1)
+		_, std = self.ensemble_regressor.mixture_mean_var(ensemble_input)
+		# std shape: [batch, state_dim]
+		sigma_squared = std ** 2
+		# Information gain: sum of log(1 + σ²_j) for each dimension
+		info_gain = torch.sum(torch.log(1 + sigma_squared), dim=-1, keepdim=True)
+		return info_gain
+	
 	def update_sac(self, replay_buffer, batch_size=64):
-		"""SAC critic update using replay buffer"""
+		"""SAC critic update using replay buffer with entropy regularization"""
 		if len(replay_buffer) < batch_size:
 			return {}
 		
@@ -311,11 +327,18 @@ class HUCRL:
 		# Sample hallucinate actions for current and next states
 		with torch.no_grad():
 			_, hallucinate_action, _, _ = self.actor.sample(state)
-			next_action, next_hallucinate_action, _, _ = self.actor.sample(next_state)
+			next_action, next_hallucinate_action, next_log_prob_discrete, next_log_prob_continuous = self.actor.sample(next_state)
 			
-			# Target Q-value using next state, next_action (discrete), and next_hallucinate_action
+			# Get alpha values
+			alpha1 = self.alpha1.detach() if isinstance(self.alpha1, torch.Tensor) else self.alpha1
+			alpha2 = self.alpha2
+			
+			# Target Q-value with entropy regularization: r + γ * (Q(s', π(s')) - α1 * log π(s') + α2 * information_bonus)
 			next_q_target = self.critic_target(next_state, next_action, next_hallucinate_action)
-			target_q_value = reward + (1 - done) * self.gamma * next_q_target
+			# Combined entropy from both discrete and continuous actions
+			next_entropy = next_log_prob_discrete + next_log_prob_continuous
+			info_bonus = self.information_bonus(next_state, next_action)
+			target_q_value = reward + (1 - done) * self.gamma * (next_q_target - alpha1 * next_entropy.unsqueeze(1) + alpha2 * info_bonus)
 		
 		# Current Q-value with state, action (from buffer), and sampled hallucinate_action
 		q_value = self.critic(state, action, hallucinate_action)
@@ -333,7 +356,8 @@ class HUCRL:
 		
 		result = {
 			'critic_loss': critic_loss.item(),
-			'q_value': q_value.mean().item()
+			'q_value': q_value.mean().item(),
+			'target_q_value': target_q_value.mean().item()
 		}
 		return result
 		

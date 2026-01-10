@@ -7,7 +7,7 @@ from HUCRL import HUCRL, ReplayBuffer, EpisodeMemory
 
 def train_sac_reinforce_cartpole():
 	# Select environment: "mountaincar" or "cartpole"
-	ENV_OPTION = "mountaincar"
+	ENV_OPTION = "cartpole"
 	if ENV_OPTION == "mountaincar":
 		ENV_NAME = 'MountainCar-v0'
 		MAX_STEPS = 200
@@ -62,7 +62,8 @@ def train_sac_reinforce_cartpole():
 		lr=5e-4,
 		gamma=0.99,
 		tau=0.01,
-		alpha=0.01,
+		alpha1=0.01,
+		alpha2=0.01,
 		auto_entropy_tuning=False,
 		reward_function=reward_fn,
 		done_function=done_fn,
