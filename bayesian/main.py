@@ -7,7 +7,7 @@ from HUCRL import HUCRL, ReplayBuffer, EpisodeMemory
 
 def train_sac_reinforce_cartpole():
 	# Select environment: "mountaincar" or "cartpole"
-	ENV_OPTION = "cartpole"
+	ENV_OPTION = "mountaincar"
 	if ENV_OPTION == "mountaincar":
 		ENV_NAME = 'MountainCar-v0'
 		MAX_STEPS = 200
@@ -44,7 +44,7 @@ def train_sac_reinforce_cartpole():
 	BATCH_SIZE = 64
 	BUFFER_SIZE = 1000
 	UPDATE_CRITIC_FREQ = 10
-	HALLUCINATED_UPDATES = 20  # Number of hallucinated rollouts per episode
+	HALLUCINATED_UPDATES = 50  # Number of hallucinated rollouts per episode
 
 	env = gym.make(ENV_NAME, render_mode="rgb_array")
 	env = RecordVideo(
