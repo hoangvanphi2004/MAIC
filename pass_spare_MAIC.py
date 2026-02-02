@@ -343,7 +343,7 @@ def run_training(
     return metrics
 if __name__ == '__main__':
     run_training(
-        episodes=500,
+        episodes=10000,
         steps_per_episode=100,
         batch_size=1024,
         updates_num=4,
