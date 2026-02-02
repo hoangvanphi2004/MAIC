@@ -1,6 +1,5 @@
 import time
 import warnings
-import json
 from pathlib import Path
 import gymnasium as gym
 import multigrid.envs
@@ -16,7 +15,7 @@ try:
 except Exception:
     imageio = None
 def run_training(
-    env_id='MultiGrid-MultiTargetEmpty-8x8-v0',
+    env_id='MultiGrid-PassSparse-8x8-v0',
     num_agents=3,
     episodes=5000,
     steps_per_episode=40,
@@ -26,7 +25,7 @@ def run_training(
     steps_per_update=4,
     updates_num=4,
     save_every=500,
-    model_dir='runs/maic',
+    model_dir='runs/maic_pass_spare',
     render=False,
     record_video=False,
     video_every=500,
@@ -41,11 +40,11 @@ def run_training(
         return (cumsum[window:] - cumsum[:-window]) / float(window)
     if record_video:
         try:
-            env = gym.make(env_id, num_agents=num_agents, render_mode='rgb_array', max_steps = steps_per_episode)
+            env = gym.make(env_id, num_agents=num_agents, render_mode='rgb_array')
         except TypeError:
-            env = gym.make(env_id, num_agents=num_agents, max_steps = steps_per_episode)
+            env = gym.make(env_id, num_agents=num_agents)
     else:
-        env = gym.make(env_id, num_agents=num_agents, max_steps = steps_per_episode)
+        env = gym.make(env_id, num_agents=num_agents)
     obs0, _ = env.reset()
     first_obs = list(obs0.values())[0]
     if isinstance(first_obs, dict) and 'image' in first_obs:
@@ -62,7 +61,7 @@ def run_training(
         lr=3e-4,
         gamma=0.99,
         tau=0.02,
-        alpha=0.02,
+        alpha=0.01,
         auto_entropy_tuning=True,
     )
     replay_buffer = ReplayBuffer(capacity=replay_size)
@@ -254,20 +253,13 @@ def run_training(
                         
                         ax_empty.set_axis_off()
                         plt.tight_layout()
-                        out = run_path / 'metrics_grid.png'
+                        out = run_path / f'metrics_grid.png'
                         plt.savefig(str(out), dpi=150)
                         plt.close(fig)
                         print('Saved metric plots to', out)
                 except Exception as e:
                     warnings.warn(f'Failed to save metric plots: {e}')
     agent.save(str(run_path / 'model_final.pth'))
-    rewards_path = run_path / 'episode_rewards.json'
-    with open(rewards_path, 'w') as f:
-        json.dump({
-            'episodes': list(range(len(metrics['episode_rewards']))),
-            'rewards': metrics['episode_rewards']
-        }, f, indent=2)
-    print(f"Rewards saved to {rewards_path}")
     print('Training finished. Saved final model.')
     try:
         if plt is None:
@@ -351,11 +343,11 @@ def run_training(
     return metrics
 if __name__ == '__main__':
     run_training(
-        episodes=10000,
-        steps_per_episode=40,
+        episodes=500,
+        steps_per_episode=100,
         batch_size=1024,
         updates_num=4,
-        save_every=500,
-        video_every=500,
+        save_every=50,
+        video_every=50,
         record_video=True,
     )
