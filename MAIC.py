@@ -338,7 +338,7 @@ class MAIC:
 			alpha1 = self.alpha1.detach() if isinstance(self.alpha1, torch.Tensor) else self.alpha1
 			alpha2 = self.alpha2.detach() if isinstance(self.alpha2, torch.Tensor) else self.alpha2
 			# print(f"advantages shape: {advantages.shape}, new_log_probs shape: {new_log_probs.shape}, information_bonus shape: {information_bonus.shape}")
-			policy_loss_a = - new_log_probs * (advantages - alpha1 * new_log_probs + alpha2 * information_bonus.squeeze(-1)).detach()
+			policy_loss_a = (- new_log_probs * (advantages - alpha1 * new_log_probs + alpha2 * information_bonus).detach()).mean()
 			# print(f"Policy loss agent {a_i}: {policy_loss_a}")
 			total_policy_loss += policy_loss_a
 			total_entropy += entropy.item()
