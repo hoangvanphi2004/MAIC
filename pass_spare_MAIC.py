@@ -62,7 +62,7 @@ def run_training(
         gamma=0.99,
         tau=0.02,
         alpha=0.01,
-        auto_entropy_tuning=False,
+        auto_entropy_tuning=True,
     )
     replay_buffer = ReplayBuffer(capacity=replay_size)
     episode_memory = EpisodeMemory(num_agents=num_agents)
