@@ -59,7 +59,7 @@ def run_training(
         action_dim,
         num_agents=num_agents,
         hidden_dim=128,
-        lr=3e-4,
+        lr=1e-3,
         gamma=0.99,
         tau=0.02,
         alpha=0.02,
