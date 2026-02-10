@@ -130,38 +130,51 @@ class Critic(nn.Module):
 		x2 = F.relu(self.q2_fc2(x2))
 		q2 = self.q2_out(x2)
 		return q1, q2
-		
+
 class Normalizer:
-	def __init__(self, size, eps=1e-8):
-		self.size = size
-		self.eps = eps
-		self.mean = np.zeros(size, dtype=np.float32)
-		self.var = np.ones(size, dtype=np.float32)
-		self.count = 0
+    def __init__(self, size, eps=1e-8, device="cpu"):
+        self.size = size
+        self.eps = eps
+        self.device = device
 
-	def update(self, x):
-		batch_mean = np.mean(x, axis=0)
-		batch_var = np.var(x, axis=0)
-		batch_count = x.shape[0]
+        self.mean = torch.zeros(size, dtype=torch.float32, device=device)
+        self.var = torch.ones(size, dtype=torch.float32, device=device)
+        self.count = torch.tensor(0.0, device=device)
 
-		delta = batch_mean - self.mean
-		total_count = self.count + batch_count
+    @torch.no_grad()
+    def update(self, x):
+        """
+        x: tensor shape [batch, size]
+        """
+        x = x.to(self.device)
 
-		new_mean = self.mean + delta * batch_count / total_count
-		m_a = self.var * self.count
-		m_b = batch_var * batch_count
-		M2 = m_a + m_b + np.square(delta) * self.count * batch_count / total_count
-		new_var = M2 / total_count
+        batch_mean = x.mean(dim=0)
+        batch_var = x.var(dim=0, unbiased=False)
+        batch_count = torch.tensor(x.shape[0], device=self.device, dtype=torch.float32)
 
-		self.mean = new_mean
-		self.var = new_var
-		self.count = total_count
+        delta = batch_mean - self.mean
+        total_count = self.count + batch_count
 
-	def normalize(self, x):
-		return (x - self.mean) / (np.sqrt(self.var) + self.eps)
-		
-	def denormalize(self, x):
-		return x * (np.sqrt(self.var) + self.eps) + self.mean
+        new_mean = self.mean + delta * batch_count / total_count
+
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+
+        M2 = m_a + m_b + delta.pow(2) * self.count * batch_count / total_count
+        new_var = M2 / total_count
+
+        self.mean = new_mean
+        self.var = new_var
+        self.count = total_count
+
+    def normalize(self, x):
+        x = x.to(self.device)
+        return (x - self.mean) / (torch.sqrt(self.var) + self.eps)
+
+    def denormalize(self, x):
+        x = x.to(self.device)
+        return x * (torch.sqrt(self.var) + self.eps) + self.mean
+
 		
 class MAIC:
 	def __init__(self, state_shape, action_dim, num_agents=2, hidden_dim=128, lr=3e-4, gamma=0.99,
@@ -208,6 +221,8 @@ class MAIC:
 		else:
 			self.alpha1 = alpha
 			self.alpha2 = alpha
+
+		print(f"alpha 1: {self.alpha1} | alpha 2: {self.alpha2}")
 		
 	def select_action(self, state, evaluate=False):
 		with torch.no_grad():
@@ -227,7 +242,7 @@ class MAIC:
 					log_probs.append(None)
 				else:
 					# print(f"state: {s.shape}")
-					_, log_prob, continuous_action = actor.sample(s)
+					continuous_action, log_prob, _ = actor.sample(s)
 					continuous_action = continuous_action.detach().cpu().numpy()[0]
 					action = int((continuous_action[0] + 1) / 2 * (self.action_dim - 1))
 					action = np.clip(action, 0, self.action_dim - 1)
@@ -301,11 +316,11 @@ class MAIC:
 		action_continuous = action_continuous.reshape(action_continuous.size(0), -1)
 		# print(f"states shape: {states.shape}, actions shape: {actions_oh.shape}")
 		ensemble_input = torch.cat([states, action_continuous], dim=-1)
-		ensemble_input = self.input_normalizer.normalize(ensemble_input.detach().cpu().numpy())
+		ensemble_input = self.input_normalizer.normalize(ensemble_input)
 		ensemble_input = torch.FloatTensor(ensemble_input).to(self.device)
 		mean_ens, var_total, std_total, std_ale, std_epi = self.ensemble_regressor.mixture_mean_var(ensemble_input, return_decomposed = True)
 		info_gain = torch.sum(torch.log(1 + (std_epi ** 2) / (std_ale ** 2)), dim=-1, keepdim=True)
-		info_gain = self.information_bonus_normalizer.normalize(info_gain.detach().cpu().numpy())
+		info_gain = self.information_bonus_normalizer.normalize(info_gain)
 		info_gain = torch.FloatTensor(info_gain).to(self.device)
 		# print(f"Information gain shape: {info_gain.shape}")
 		return info_gain
@@ -321,13 +336,12 @@ class MAIC:
 
 		states = states.view(states.size(0), -1)
 		next_state = next_state.view(next_state.size(0), -1)
-		
 		action_continuous = action_continuous.view(action_continuous.size(0), -1)
 
-		next_state = self.output_normalizer.normalize(next_state.detach().cpu().numpy())
+		next_state = self.output_normalizer.normalize(next_state)
 		next_state = torch.FloatTensor(next_state).to(self.device)
 		ensemble_input = torch.cat([states, action_continuous], dim=-1)
-		ensemble_input = self.input_normalizer.normalize(ensemble_input.detach().cpu().numpy())
+		ensemble_input = self.input_normalizer.normalize(ensemble_input)
 		ensemble_input = torch.FloatTensor(ensemble_input).to(self.device)
 		self.ensemble_regressor.train_batch(ensemble_input, next_state)
 
@@ -341,16 +355,18 @@ class MAIC:
 		reward = torch.FloatTensor(reward).to(self.device)
 		next_states = torch.FloatTensor(next_states).permute(0, 1, 4, 2, 3).to(self.device)
 		done = torch.FloatTensor(done).to(self.device)
+		states_flat = states.reshape(states.size(0), -1)
+
+		# print(f"action_cons {action_continuous}");
 
 		# Update Normalizers
 		infos = {}
 		with torch.no_grad():
-			states_flat = states.reshape(states.size(0), -1)
 			action_continuous_flat = action_continuous.view(action_continuous.size(0), -1)
-			self.information_bonus_normalizer.update(self.information_bonus(states_flat, action_continuous_flat).detach().cpu().numpy())
-			self.input_normalizer.update(torch.cat([states_flat, action_continuous_flat], dim=-1).detach().cpu().numpy())
+			self.information_bonus_normalizer.update(self.information_bonus(states_flat, action_continuous_flat))
+			self.input_normalizer.update(torch.cat([states_flat, action_continuous_flat], dim=-1))
 			next_states_flat = next_states.reshape(next_states.size(0), -1)
-			self.output_normalizer.update(next_states_flat.detach().cpu().numpy())
+			self.output_normalizer.update(next_states_flat)
 
 		if reward.dim() == 2:
 			reward_for_target = reward.mean(dim=1, keepdim=True)
@@ -363,22 +379,30 @@ class MAIC:
 			for i, actor in enumerate(self.actors):
 				ns_i = next_states[:, i]
 				a_i, logp_i, _ = actor.sample(ns_i)
-				next_actions.append(a_i.unsqueeze(1).long())
+				# print(f"action{i} : {a_i}");
+				next_actions.append(a_i)
 				next_log_prob = next_log_prob + logp_i
+			# print(next_actions)
 			next_actions_cat = torch.cat(next_actions, dim=1)
+			# print(next_actions_cat)
 			next_actions_cat_flat = next_actions_cat.view(next_actions_cat.size(0), -1)
 			# print(f"next_states size = {next_states.size()}")
 			next_states_flat = next_states.reshape(next_states.size(0), -1)
+			# print(f"next_action_cat {next_actions_cat}, next_states{next_states.shape}")
 			next_q1_target, next_q2_target = self.critic_target(next_states, next_actions_cat_flat)
 			next_q_target = torch.min(next_q1_target, next_q2_target)
 			information_bonus = self.information_bonus(next_states_flat, next_actions_cat_flat)
 			# print(f"next_q_target {next_q_target.shape}, information_bonus {information_bonus.shape}, next_log_prob {next_log_prob.shape}")
+			
 			target_q = next_q_target - self.alpha1 * next_log_prob + self.alpha2 * information_bonus
+			# print(f"reward_for_target {reward_for_target}, done {done.shape}")
 			target_q_value = reward_for_target + (1 - done.unsqueeze(1)) * self.gamma * target_q
 
 		action_continuous_flat = action_continuous.view(action_continuous.size(0), -1)
+		# print(f"action_continuous_flat : {action_continuous_flat.shape}")
 		q1, q2 = self.critic(states, action_continuous_flat)
 		critic_loss = F.mse_loss(q1, target_q_value) + F.mse_loss(q2, target_q_value)
+		
 		self.critic_optimizer.zero_grad()
 		critic_loss.backward()
 		torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
@@ -391,26 +415,30 @@ class MAIC:
 		for i, actor in enumerate(self.actors):
 			s_i = states[:, i]
 			a_i, logp_i, _ = actor.sample(s_i)
-			sampled_actions.append(a_i.unsqueeze(1).long())
+			sampled_actions.append(a_i)
 			sampled_logp.append(logp_i)
-		
+
 		with torch.no_grad():
 			sampled_actions = torch.stack(sampled_actions, dim = 1);
 			sampled_actions_flat = sampled_actions.view(sampled_actions.size(0), -1)
 			# print(f"state: {states.shape}, sampled actions flat: {sampled_actions_flat.shape}")
 			q1, q2 = self.critic(states, sampled_actions_flat)
-			q_values = torch.min(q1, q2).squeeze(-1)
+			# print(f"q1 {q1.shape}")
+			q_values = torch.min(q1, q2)
 
-		information_bonus = self.information_bonus(states_flat, sampled_actions_flat).squeeze(-1)
+		information_bonus = self.information_bonus(states_flat, sampled_actions_flat)
 		
 		for i, actor in enumerate(self.actors):
 			baseline = self.compute_counterfactual_baseline(states, action_continuous, i)
 			advantages = (q_values - baseline).detach()
 			if len(advantages) > 1:
 				advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-			actor_loss = (self.alpha1 * sampled_logp[i] - q_values + self.alpha2 * information_bonus).mean()
+			
+			# print(f"sampled_logp {sampled_logp[i].shape}, advantages.shape: {advantages.shape}")
+			actor_loss = (self.alpha1 * sampled_logp[i] - advantages + self.alpha2 * information_bonus).mean()
 			total_policy_loss += actor_loss
-
+			
+		# print(f"total_policy_loss {total_policy_loss}")
 		self.actor_optimizer.zero_grad()
 		total_policy_loss.backward()
 		torch.nn.utils.clip_grad_norm_([p for a in self.actors for p in a.parameters()], 1.0)
@@ -426,7 +454,7 @@ class MAIC:
 				for i, actor in enumerate(self.actors):
 					s_i = states[:, i]
 					a_i, logp_i, _ = actor.sample(s_i)
-					sampled_actions.append(a_i.unsqueeze(1).long())
+					sampled_actions.append(a_i)
 					sampled_logp = sampled_logp + logp_i
 
 				sampled_logp_target = 0
@@ -434,7 +462,7 @@ class MAIC:
 				for i, actor in enumerate(self.actors_target):
 					s_i = states[:, i]
 					a_i, logp_i, _ = actor.sample(s_i)
-					sampled_actions_target.append(a_i.unsqueeze(1).long())
+					sampled_actions_target.append(a_i)
 					sampled_logp_target = sampled_logp + logp_i
 
 			alpha_loss = -(self.log_alpha1 * (sampled_logp + self.target_entropy).detach()).mean()
@@ -457,20 +485,27 @@ class MAIC:
 			self.alpha2_optimizer.step()
 			self.alpha2 = self.log_alpha2.exp()
 
-			for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
-				target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-
-			for i in range(self.num_agents):
-				for target_param, param in zip(self.actors_target[i].parameters(), self.actors[i].parameters()):
-					target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-
 			alpha_info = {
 				'alpha1_loss': alpha_loss.item(),
 				'alpha1_value': self.alpha1.item(),
 				'alpha2_loss': alpha_loss2.item(),
 				'alpha2_value': self.alpha2.item()
 			}
+		else:
+			alpha_info = {
+				'alpha1_value': self.alpha1,
+				'alpha2_value': self.alpha2
+			}
 
+		for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
+			target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+
+		for i in range(self.num_agents):
+			for target_param, param in zip(self.actors_target[i].parameters(), self.actors[i].parameters()):
+				target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+
+		# print(f"alpha 1: {self.alpha1} | alpha 2: {self.alpha2}")
+		
 		result = {
 			'critic_loss': critic_loss.item(),
 			'q_value': q1.mean().item()
