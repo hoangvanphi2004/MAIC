@@ -23,8 +23,8 @@ def run_training(
 	replay_size=int(1e6),
 	batch_size=64,
 	start_steps=1000,
-	steps_per_update=4,
-	updates_num=4,
+	steps_per_update=1,
+	updates_num=1,
 	save_every=500,
 	model_dir='runs/maic_cont',
 	render=False,
@@ -81,7 +81,6 @@ def run_training(
 	for ep in range(episodes):
 		obs_dict, _ = env.reset()
 		obs = np.array([np.array(o['image'], dtype=np.float32) for _, o in obs_dict.items()])
-		episode_memory.clear()
 		ep_reward = 0.0
 		frames = []
 		record_this_ep = False
@@ -93,7 +92,9 @@ def run_training(
 		cycle_alpha = []
 		cycle_alpha1 = []
 		cycle_alpha2 = []
+		sac_stats = None
 		for step in range(steps_per_episode):
+			t1 = time.time()
 			total_steps += 1
 			if total_steps < start_steps:
 				actions = [env.action_space[i].sample() for i in range(num_agents)]
@@ -115,33 +116,36 @@ def run_training(
 				except Exception:
 					pass
 			replay_buffer.push(obs, actions, shared_reward, next_obs, done)
-			episode_memory.push(obs, actions, shared_reward, log_probs)
 			obs = next_obs
 			ep_reward += shared_reward
 			if done:
 				break
+			t2 = time.time()
 			if len(replay_buffer) > batch_size and (total_steps + 1) % steps_per_update == 0:
 				for _ in range(updates_num):
 					sac_stats = agent.update_sac(replay_buffer, batch_size)
-					if sac_stats:
-						cycle_critic_loss.append(sac_stats.get('critic_loss', 0.0))
-						cycle_q.append(sac_stats.get('q_value', 0.0))
-						if 'alpha1_value' in sac_stats:
-							cycle_alpha1.append(sac_stats['alpha1_value'])
-						if 'alpha2_value' in sac_stats:
-							cycle_alpha2.append(sac_stats['alpha2_value'])
-						if 'alpha_value' in sac_stats:
-							cycle_alpha.append(sac_stats['alpha_value'])
-				if cycle_critic_loss:
-					metrics['critic_losses'].append(np.mean(cycle_critic_loss))
-				if cycle_q:
-					metrics['q_values'].append(np.mean(cycle_q))
-				if cycle_alpha:
-					metrics['alpha_values'].append(np.mean(cycle_alpha))
-				if cycle_alpha1:
-					metrics['alpha1_values'].append(np.mean(cycle_alpha1))
-				if cycle_alpha2:
-					metrics['alpha2_values'].append(np.mean(cycle_alpha2))
+
+			t3 = time.time()
+			# print(f"t2 - t1 {t2 - t1}, t3 - t2 {t3 - t2}");
+		if sac_stats != None:
+			cycle_critic_loss.append(sac_stats.get('critic_loss', 0.0))
+			cycle_q.append(sac_stats.get('q_value', 0.0))
+			if 'alpha1_value' in sac_stats:
+				cycle_alpha1.append(sac_stats['alpha1_value'])
+			if 'alpha2_value' in sac_stats:
+				cycle_alpha2.append(sac_stats['alpha2_value'])
+			if 'alpha_value' in sac_stats:
+				cycle_alpha.append(sac_stats['alpha_value'])
+		if cycle_critic_loss:
+			metrics['critic_losses'].append(np.mean(cycle_critic_loss))
+		if cycle_q:
+			metrics['q_values'].append(np.mean(cycle_q))
+		if cycle_alpha:
+			metrics['alpha_values'].append(np.mean(cycle_alpha))
+		if cycle_alpha1:
+			metrics['alpha1_values'].append(np.mean(cycle_alpha1))
+		if cycle_alpha2:
+			metrics['alpha2_values'].append(np.mean(cycle_alpha2))
 		# Print update info
 		avg_critic_loss = np.mean(cycle_critic_loss) if cycle_critic_loss else 0.0
 		avg_q = np.mean(cycle_q) if cycle_q else 0.0
@@ -347,8 +351,7 @@ if __name__ == '__main__':
 		episodes=10000,
 		steps_per_episode=40,
 		batch_size=1024,
-		updates_num=4,
-		save_every=500,
-		video_every=500,
+		save_every=100,
+		video_every=100,
 		record_video=True,
 	)
