@@ -92,6 +92,14 @@ def run_training(args):
                         metrics['alpha2_values'].append(result_dict.get('alpha2_loss', 0.0))
                         metrics['entropies'].append(result_dict.get('entropy', 0.0))
             
+            # print(f"obs shape: {obs.shape}")
+            # print(f"state shape: {state.shape}")
+            # print(f"actions shape: {actions}")
+            # print(f"shared_reward: {shared_reward}")
+            # print(f"next_obs shape: {next_obs.shape}")
+            # print(f"next_state shape: {next_state.shape}")
+            # print(f"done: {done}")
+
             replay_buffer.push(obs, state, actions, shared_reward, next_obs, next_state, done)
             obs = next_obs
             state = next_state
@@ -115,6 +123,8 @@ def run_training(args):
         if record_this_ep and frames:
             vid_path = run_path / f'run_ep{ep+1}.mp4'
             save_video(frames, vid_path)
+
+        if (ep + 1) % args.plot_every == 0:
             plot_metrics(metrics, run_path, moving_average)
 
     if hasattr(agent, 'save'):
