@@ -298,7 +298,10 @@ class MultiGridEnv(gym.Env, RandomMixin, ABC):
         if self.render_mode == 'human':
             self.render()
 
-        return observations, defaultdict(dict)
+        infos = defaultdict(dict)
+        infos['state'] = self.get_state()
+        
+        return observations, infos
 
     def step(
         self,
@@ -343,7 +346,10 @@ class MultiGridEnv(gym.Env, RandomMixin, ABC):
         if self.render_mode == 'human':
             self.render()
 
-        return observations, rewards, terminations, truncations, defaultdict(dict)
+        infos = defaultdict(dict)
+        infos['state'] = self.get_state()
+
+        return observations, rewards, terminations, truncations, infos
 
     def gen_obs(self) -> dict[AgentID, ObsType]:
         """
@@ -374,6 +380,19 @@ class MultiGridEnv(gym.Env, RandomMixin, ABC):
             }
 
         return observations
+
+    def get_state(self):
+        """
+        Return the global state of the environment (grid + agents).
+        """
+        grid_encoding = self.grid.state.copy()
+        
+        for agent in self.agents:
+            if not agent.state.terminated:
+                i, j = agent.state.pos
+                grid_encoding[i, j] = agent.encode()
+                
+        return grid_encoding
 
     def handle_actions(
         self, actions: dict[AgentID, Action]) -> dict[AgentID, SupportsFloat]:
