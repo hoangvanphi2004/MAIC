@@ -74,9 +74,6 @@ def update_sac(mac, replay_buffer, batch_size=64):
         result['critic_loss'] = critic_loss.item()
         result['q_value'] = q1.mean().item()
 
-        if mac.use_information_bonus:
-            train_ensemble_model(mac, state, action_oh, next_state)
-
     elif mac.critic_type == 'independent':
         total_critic_loss = 0.0
         total_q_value = 0.0
@@ -158,6 +155,9 @@ def update_sac(mac, replay_buffer, batch_size=64):
     total_policy_loss.backward()
     torch.nn.utils.clip_grad_norm_([p for a in mac.actors for p in a.parameters()], 1.0)
     mac.actor_optimizers[a_i].step()
+
+    if mac.use_information_bonus:
+        train_ensemble_model(mac, state, action_oh, next_state)
 
     result['actor_loss'] = (total_policy_loss / mac.num_agents).item()
     result['entropy'] = total_entropy / mac.num_agents
