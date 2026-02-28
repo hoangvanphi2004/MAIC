@@ -5,14 +5,14 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 
 class Actor(nn.Module):
-    def __init__(self, state_shape, action_dim, hidden_dim=128):
+    def __init__(self, obs_shape, action_dim, hidden_dim=128):
         super(Actor, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=4, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(obs_shape[2], 16, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
         def conv2d_size_out(size, kernel_size=4, stride=2, padding=1):
             return (size + 2 * padding - kernel_size) // stride + 1
-        h = conv2d_size_out(conv2d_size_out(state_shape[0]))
-        w = conv2d_size_out(conv2d_size_out(state_shape[1]))
+        h = conv2d_size_out(conv2d_size_out(obs_shape[0]))
+        w = conv2d_size_out(conv2d_size_out(obs_shape[1]))
         linear_input_size = h * w * 32
         self.fc1 = nn.Linear(linear_input_size, action_dim)
         
@@ -26,11 +26,9 @@ class Actor(nn.Module):
         
     def sample(self, state):
         action_probs = self.forward(state)
-        action_probs = action_probs + 1e-8
-        action_probs = action_probs / action_probs.sum(dim=-1, keepdim=True)
         dist = Categorical(action_probs)
         action = dist.sample()
-        log_prob = torch.log(action_probs.gather(1, action.unsqueeze(-1)).squeeze(-1))
+        log_prob = torch.log(action_probs.gather(1, action.unsqueeze(-1)).squeeze(-1) + 1e-8)
         return action, log_prob, action_probs
 
 class Critic(nn.Module):

@@ -2,7 +2,7 @@ from pathlib import Path
 import numpy as np
 
 from components import ReplayBuffer
-from utils.plotter import plot_metrics
+from utils.plotter import plot_metrics, plot_q_heatmaps
 from utils.video_logger import save_video
 from utils.metric_tracker import moving_average, save_rewards_json
 from utils.agent_factory import get_agent_class
@@ -38,10 +38,13 @@ def run_training(args):
         'critic_losses': [],
         'actor_losses': [],
         'entropies': [],
+        'information_gains': [],
         'q_values': [],
         'alpha_values': [],
         'alpha1_values': [],
         'alpha2_values': [],
+        'alpha1_losses': [],
+        'alpha2_losses': [],
     }
 
     for ep in range(args.episodes):
@@ -88,17 +91,17 @@ def run_training(args):
                         metrics['actor_losses'].append(result_dict.get('actor_loss', 0.0))
                         metrics['critic_losses'].append(result_dict.get('critic_loss', 0.0))
                         metrics['q_values'].append(result_dict.get('q_value', 0.0))
-                        metrics['alpha1_values'].append(result_dict.get('alpha1_loss', 0.0))
-                        metrics['alpha2_values'].append(result_dict.get('alpha2_loss', 0.0))
                         metrics['entropies'].append(result_dict.get('entropy', 0.0))
-            
-            # print(f"obs shape: {obs.shape}")
-            # print(f"state shape: {state.shape}")
-            # print(f"actions shape: {actions}")
-            # print(f"shared_reward: {shared_reward}")
-            # print(f"next_obs shape: {next_obs.shape}")
-            # print(f"next_state shape: {next_state.shape}")
-            # print(f"done: {done}")
+                        if 'information_gain' in result_dict:
+                            metrics['information_gains'].append(result_dict['information_gain'])
+                        if 'alpha1_loss' in result_dict:
+                            metrics['alpha1_losses'].append(result_dict['alpha1_loss'])
+                        if 'alpha2_loss' in result_dict:
+                            metrics['alpha2_losses'].append(result_dict['alpha2_loss'])
+                        if 'alpha1_value' in result_dict:
+                            metrics['alpha1_values'].append(result_dict['alpha1_value'])
+                        if 'alpha2_value' in result_dict:
+                            metrics['alpha2_values'].append(result_dict['alpha2_value'])
 
             replay_buffer.push(obs, state, actions, shared_reward, next_obs, next_state, done)
             obs = next_obs
@@ -126,6 +129,7 @@ def run_training(args):
 
         if (ep + 1) % args.plot_every == 0:
             plot_metrics(metrics, run_path, moving_average)
+            plot_q_heatmaps(agent, env, ep + 1, run_path)
 
     if hasattr(agent, 'save'):
         agent.save(str(run_path / 'model_final.pth'))

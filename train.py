@@ -5,9 +5,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Unified Multi-Agent RL Training Script")
     parser.add_argument('--algo', type=str, default='MAIC', choices=['MAIC', 'CMASAC', 'COMA', 'ISAC', 'MASAC'],
                         help='Which algorithm to use')
-    parser.add_argument('--env_id', type=str, default='MultiGrid-MultiTargetEmpty-8x8-v0', 
+    parser.add_argument('--env_id', type=str, default='MultiGrid-MultiTargetEmpty-5x5-v0', 
                         help='Multigrid environment id')
-    parser.add_argument('--num_agents', type=int, default=2, help='Number of agents')
+    parser.add_argument('--num_agents', type=int, default=1, help='Number of agents')
     parser.add_argument('--episodes', type=int, default=5000, help='Total training episodes')
     parser.add_argument('--steps_per_episode', type=int, default=40, help='Max steps per episode')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size for updates')
@@ -23,7 +23,7 @@ if __name__ == '__main__':
     
     # Algorithm Hyperparameters
     parser.add_argument('--hidden_dim', type=int, default=128, help='Hidden dimension size')
-    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('--lr', type=float, default=3e-4, help='Learning rate')
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
     parser.add_argument('--auto_entropy_tuning', action='store_true', help='Use SAC auto entropy (for supported algos)')
 

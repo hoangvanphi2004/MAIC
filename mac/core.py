@@ -38,7 +38,7 @@ class MAC:
 
         # Actors (always independent policies)
         self.actors = [Actor(obs_shape, action_dim, hidden_dim).to(self.device) for _ in range(self.num_agents)]
-        self.actor_optimizers = [optim.Adam(actor.parameters(), lr=lr) for actor in self.actors]
+        self.actor_optimizer = optim.Adam([p for a in self.actors for p in a.parameters()], lr=lr)
 
         # Target actors
         self.actors_target = [Actor(obs_shape, action_dim, hidden_dim).to(self.device) for _ in range(self.num_agents)]
