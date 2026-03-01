@@ -8,6 +8,8 @@ from utils.metric_tracker import moving_average, save_rewards_json
 from utils.agent_factory import get_agent_class
 from utils.env_setup import make_env, get_obs_state_action_dims
 
+use_state = False
+
 def run_training(args):
     run_path = Path(args.model_dir) / args.algo.lower()
     run_path.mkdir(parents=True, exist_ok=True)
@@ -50,7 +52,15 @@ def run_training(args):
     for ep in range(args.episodes):
         obs_dict, infos = env.reset()
         obs = np.array([np.array(o['image'], dtype=np.float32) for _, o in obs_dict.items()])
-        state = np.array(infos['state'], dtype=np.float32)
+        
+        # Option 1: Use state from info (use_state=True)
+        # Option 2: Concatenate observations (use_state=False)
+        if use_state:
+            state = np.array(infos['state'], dtype=np.float32)
+        else:
+            # obs shape: (num_agents, H, W, C) -> state shape: (H, W, num_agents * C)
+            state = obs.transpose(1, 2, 0, 3).reshape(obs.shape[1], obs.shape[2], -1)
+        
         ep_reward = 0.0
         frames = []
         record_this_ep = False
@@ -73,7 +83,15 @@ def run_training(args):
             rewards_list = [rewards_dict[i] for i in range(args.num_agents)]
             shared_reward = float(sum(rewards_list))
             next_obs = np.array([np.array(o['image'], dtype=np.float32) for _, o in next_obs_dict.items()])
-            next_state = np.array(infos['state'], dtype=np.float32)
+            
+            # Option 1: Use state from info (use_state=True)
+            # Option 2: Concatenate observations (use_state=False)
+            if use_state:
+                next_state = np.array(infos['state'], dtype=np.float32)
+            else:
+                # next_obs shape: (num_agents, H, W, C) -> next_state shape: (H, W, num_agents * C)
+                next_state = next_obs.transpose(1, 2, 0, 3).reshape(next_obs.shape[1], next_obs.shape[2], -1)
+            
             done = dones.all() or (step == args.steps_per_episode - 1)
             
             if record_this_ep:
