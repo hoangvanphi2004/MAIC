@@ -7,10 +7,7 @@ import multigrid.envs
 import numpy as np
 import torch
 from CMASAC import ReplayBuffer, SAC_REINFORCE
-try:
-	import matplotlib.pyplot as plt
-except Exception:
-	plt = None
+from plot_utils import save_plots
 try:
 	import imageio
 except Exception:
@@ -30,15 +27,10 @@ def run_training(
 	render=False,
 	record_video=False,
 	video_every=500,
+	plot_every=50,
 ):
 	run_path = Path(model_dir)
 	run_path.mkdir(parents=True, exist_ok=True)
-	def _moving_average(vals, window=20):
-		if len(vals) < 1:
-			return np.array([])
-		window = max(1, min(window, len(vals)))
-		cumsum = np.cumsum(np.insert(vals, 0, 0))
-		return (cumsum[window:] - cumsum[:-window]) / float(window)
 	if record_video:
 		try:
 			env = gym.make(env_id, num_agents=num_agents, render_mode='rgb_array', max_steps = steps_per_episode)
@@ -151,6 +143,10 @@ def run_training(
 			model_path = run_path / f'model_ep{ep+1}.pth'
 			agent.save(str(model_path))
 			print('Saved model to', model_path)
+		# Generate plots independently based on plot_every frequency
+		if (ep + 1) % plot_every == 0 or ep == episodes - 1:
+			save_plots(metrics, run_path, ep + 1)
+		# Save video if frames were recorded
 		if record_this_ep and frames:
 			if imageio is None:
 				warnings.warn('imageio not installed; cannot save video')
@@ -171,68 +167,6 @@ def run_training(
 						print('Saved video to', vid_path)
 					except Exception as ex:
 						warnings.warn(f'Failed to write video: {ex}')
-				try:
-					if plt is not None:
-						fig, axes = plt.subplots(3, 3, figsize=(18, 10))
-						(ax_reward, ax_policy, ax_info), (ax_critic, ax_q, ax_entropy), (ax_alpha1_alpha2, _, _) = axes
-						rewards = metrics.get('episode_rewards', [])
-						if rewards:
-							x = np.arange(len(rewards))
-							ax_reward.plot(x, rewards, color='tab:blue', alpha=0.35, label='Episode Reward')
-							ma = _moving_average(np.array(rewards), window=20)
-							if ma.size:
-								ax_reward.plot(np.arange(len(ma)) + 19, ma, color='tab:orange', label='20-ep MA')
-							ax_reward.set_title('Episode Reward')
-							ax_reward.legend()
-							ax_reward.grid(True, alpha=0.3)
-						policy_losses = metrics.get('actor_losses', [])
-						if policy_losses:
-							ax_policy.plot(policy_losses, marker='o', ms=3)
-							ax_policy.set_title('Policy Loss (avg per log interval)')
-							ax_policy.grid(True, alpha=0.3)
-						critic_losses = metrics.get('critic_losses', [])
-						if critic_losses:
-							ax_critic.plot(critic_losses, marker='o', ms=3)
-							ax_critic.set_title('Critic Loss (avg per log interval)')
-							ax_critic.grid(True, alpha=0.3)
-						q_values = metrics.get('q_values', [])
-						if q_values:
-							ax_q.plot(q_values, marker='o', ms=3)
-							ax_q.set_title('Q-value (avg per log interval)')
-							ax_q.grid(True, alpha=0.3)
-						entropy_vals = metrics.get('entropies', [])
-						if entropy_vals:
-							ax_entropy.plot(entropy_vals, marker='o', ms=3)
-							ax_entropy.set_title('Entropy (avg per episode)')
-							ax_entropy.grid(True, alpha=0.3)
-						else:
-							ax_entropy.set_axis_off()
-						info_gains = metrics.get('information_gains', [])
-						if info_gains:
-							ax_info.plot(info_gains, marker='o', ms=3, color='tab:green')
-							ax_info.set_title('Information Gain (avg per log interval)')
-							ax_info.grid(True, alpha=0.3)
-						else:
-							ax_info.set_axis_off()
-						alpha1_vals = metrics.get('alpha1_values', [])
-						alpha2_vals = metrics.get('alpha2_values', [])
-						if alpha1_vals or alpha2_vals:
-							if alpha1_vals:
-								ax_alpha1_alpha2.plot(alpha1_vals, marker='o', ms=3, label='alpha1', color='tab:blue')
-							if alpha2_vals:
-								ax_alpha1_alpha2.plot(alpha2_vals, marker='o', ms=3, label='alpha2', color='tab:orange')
-							ax_alpha1_alpha2.set_title('Alpha1 & Alpha2')
-							ax_alpha1_alpha2.legend()
-							ax_alpha1_alpha2.grid(True, alpha=0.3)
-						else:
-							ax_alpha1_alpha2.set_axis_off()
-						plt.tight_layout()
-						out = run_path / 'metrics_grid.png'
-						plt.savefig(str(out), dpi=150)
-						plt.close(fig)
-						print('Saved metric plots to', out)
-				except Exception as e:
-					warnings.warn(f'Failed to save metric plots: {e}')
 	agent.save(str(run_path / 'model_final.pth'))
 	rewards_path = run_path / 'episode_rewards.json'
 	with open(rewards_path, 'w') as f:
@@ -242,78 +176,15 @@ def run_training(
 		}, f, indent=2)
 	print(f"Rewards saved to {rewards_path}")
 	print('Training finished. Saved final model.')
-	try:
-		if plt is None:
-			warnings.warn('matplotlib not available; skipping plots')
-		else:
-			fig, axes = plt.subplots(3, 3, figsize=(18, 10))
-			(ax_reward, ax_policy, ax_info), (ax_critic, ax_q, ax_entropy), (ax_alpha1_alpha2, _, _) = axes
-			rewards = metrics.get('episode_rewards', [])
-			if rewards:
-				x = np.arange(len(rewards))
-				ax_reward.plot(x, rewards, color='tab:blue', alpha=0.35, label='Episode Reward')
-				ma = _moving_average(np.array(rewards), window=20)
-				if ma.size:
-					ax_reward.plot(np.arange(len(ma)) + 19, ma, color='tab:orange', label='20-ep MA')
-				ax_reward.set_title('Episode Reward')
-				ax_reward.legend()
-				ax_reward.grid(True, alpha=0.3)
-			policy_losses = metrics.get('actor_losses', [])
-			if policy_losses:
-				ax_policy.plot(policy_losses, marker='o', ms=3)
-				ax_policy.set_title('Policy Loss (avg per log interval)')
-				ax_policy.grid(True, alpha=0.3)
-			critic_losses = metrics.get('critic_losses', [])
-			if critic_losses:
-				ax_critic.plot(critic_losses, marker='o', ms=3)
-				ax_critic.set_title('Critic Loss (avg per log interval)')
-				ax_critic.grid(True, alpha=0.3)
-			q_values = metrics.get('q_values', [])
-			if q_values:
-				ax_q.plot(q_values, marker='o', ms=3)
-				ax_q.set_title('Q-value (avg per log interval)')
-				ax_q.grid(True, alpha=0.3)
-			entropy_vals = metrics.get('entropies', [])
-			if entropy_vals:
-				ax_entropy.plot(entropy_vals, marker='o', ms=3)
-				ax_entropy.set_title('Entropy (avg per episode)')
-				ax_entropy.grid(True, alpha=0.3)
-			else:
-				ax_entropy.set_axis_off()
-			info_gains = metrics.get('information_gains', [])
-			if info_gains:
-				ax_info.plot(info_gains, marker='o', ms=3, color='tab:green')
-				ax_info.set_title('Information Gain (avg per log interval)')
-				ax_info.grid(True, alpha=0.3)
-			else:
-				ax_info.set_axis_off()
-			alpha1_vals = metrics.get('alpha1_values', [])
-			alpha2_vals = metrics.get('alpha2_values', [])
-			if alpha1_vals or alpha2_vals:
-				if alpha1_vals:
-					ax_alpha1_alpha2.plot(alpha1_vals, marker='o', ms=3, label='alpha1', color='tab:blue')
-				if alpha2_vals:
-					ax_alpha1_alpha2.plot(alpha2_vals, marker='o', ms=3, label='alpha2', color='tab:orange')
-				ax_alpha1_alpha2.set_title('Alpha1 & Alpha2')
-				ax_alpha1_alpha2.legend()
-				ax_alpha1_alpha2.grid(True, alpha=0.3)
-			else:
-				ax_alpha1_alpha2.set_axis_off()
-			plt.tight_layout()
-			out = run_path / 'metrics_grid.png'
-			plt.savefig(str(out), dpi=150)
-			plt.close(fig)
-			print('Saved metric plots to', out)
-	except Exception as e:
-		warnings.warn(f'Failed to save plots: {e}')
 	return metrics
 if __name__ == '__main__':
 	run_training(
-		episodes=500,
+		episodes=5000,
 		steps_per_episode=40,
 		batch_size=1024,
 		updates_num=1,
 		save_every=100,
-		video_every=10,
+		video_every=100,
+		plot_every=10,
 		record_video=True,
 	)

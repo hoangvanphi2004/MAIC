@@ -245,9 +245,8 @@ class SAC_REINFORCE:
 		ensemble_input_norm = self.input_normalizer.normalize(ensemble_input)
 		
 		mean_ens, var_total, std_total, std_ale, std_epi = self.ensemble_regressor.mixture_mean_var(ensemble_input_norm, return_decomposed=True)
-		info_gain = torch.sum(torch.log(1 + (std_epi ** 2) / (std_ale ** 2 + 1e-8)), dim=-1, keepdim=True) * 0.01
-		
-		info_gain = self.information_bonus_normalizer.normalize(info_gain) 
+		info_gain = torch.sum(torch.log(1 + (std_epi ** 2) / (std_ale ** 2 + 1e-8)), dim=-1, keepdim=True)	
+		info_gain = self.information_bonus_normalizer.normalize(info_gain) * 0.1
 		
 		return info_gain
 
@@ -290,8 +289,8 @@ class SAC_REINFORCE:
 			self.input_normalizer.update(ensemble_input)
 			self.output_normalizer.update(next_state_flat)
 
-			info_bonus = self.information_bonus(state, actions_oh)
-			self.information_bonus_normalizer.update(info_bonus)
+			info_bonus = self.information_bonus(state, actions_oh) 
+			self.information_bonus_normalizer.update(info_bonus * 10)
 
 		t3 = time.time()
 		# Update critic
@@ -358,7 +357,7 @@ class SAC_REINFORCE:
 			total_policy_loss += policy_loss_a
 			total_entropy += entropy.item()
 			total_advantage += advantages.mean().item()
-			total_info_gain += torch.abs(info_bonus).mean().item()
+			total_info_gain += info_bonus.mean().item()
 		self.actor_optimizer.zero_grad()
 		total_policy_loss.backward()
 		torch.nn.utils.clip_grad_norm_([p for a in self.actors for p in a.parameters()], 1.0)
