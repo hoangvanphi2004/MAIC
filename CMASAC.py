@@ -84,7 +84,7 @@ class Critic(nn.Module):
 		"""
 		x = F.relu(self.conv1(state))
 		x = F.relu(self.conv2(x))
-		x = x.view(x.size(0), -1)
+		x = x.reshape(x.size(0), -1)
 		return x
 	def forward(self, state, actions):
 		"""
@@ -104,7 +104,7 @@ class Critic(nn.Module):
 			actions_oh = actions.float()
 		else:
 			raise ValueError(f"Unexpected actions shape: {actions.shape}")
-		actions_flat = actions_oh.view(B, -1)
+		actions_flat = actions_oh.reshape(B, -1)
 		joint = torch.cat([embed, actions_flat], dim=1)
 		x1 = F.relu(self.q1_fc1(joint))
 		x1 = F.relu(self.q1_fc2(x1))
@@ -191,7 +191,7 @@ class SAC_REINFORCE:
 			self.alpha2 = alpha2
 		
 		self.input_ensemble_shape = state_shape[0] * state_shape[1] * state_shape[2] + action_dim * num_agents
-		self.output_ensemble_shape = state_shape[0] * state_shape[1] * state_shape[2] * num_agents
+		self.output_ensemble_shape = state_shape[0] * state_shape[1] * state_shape[2]
 		self.ensemble_regressor = EnsembleRegressor(in_dim=self.input_ensemble_shape, out_dim=self.output_ensemble_shape, M=5, hidden=256, device=self.device)
 		self.ensemble_regressor.setup_optimizers(3e-4)
 
@@ -245,7 +245,7 @@ class SAC_REINFORCE:
 		ensemble_input_norm = self.input_normalizer.normalize(ensemble_input)
 		
 		mean_ens, var_total, std_total, std_ale, std_epi = self.ensemble_regressor.mixture_mean_var(ensemble_input_norm, return_decomposed=True)
-		info_gain = torch.sum(torch.log(1 + (std_epi ** 2) / (std_ale ** 2 + 1e-8)), dim=-1, keepdim=True) * 0.001
+		info_gain = torch.sum(torch.log(1 + (std_epi ** 2) / (std_ale ** 2 + 1e-8)), dim=-1, keepdim=True) * 0.01
 		
 		info_gain = self.information_bonus_normalizer.normalize(info_gain) 
 		

@@ -277,7 +277,7 @@ if __name__ == '__main__':
 		episodes=10000,
 		steps_per_episode=40,
 		batch_size=1024,
-		updates_num=4,
+		updates_num=1,
 		save_every=500,
 		video_every=10,
 		record_video=True,
