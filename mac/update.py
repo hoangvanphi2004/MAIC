@@ -17,7 +17,7 @@ def update_sac(mac, replay_buffer, batch_size=64):
 	next_state = torch.FloatTensor(next_state).permute(0, 3, 1, 2).to(mac.device)
 	done = torch.FloatTensor(done).to(mac.device)
 
-	print(f"Update step with batch size {obs.shape[0]}, obs shape {obs.shape}, state shape {state.shape}, action shape {action.shape}, reward shape {reward.shape}, next_obs shape {next_obs.shape}, next_state shape {next_state.shape}, done shape {done.shape}")
+	# print(f"Update step with batch size {obs.shape[0]}, obs shape {obs.shape}, state shape {state.shape}, action shape {action.shape}, reward shape {reward.shape}, next_obs shape {next_obs.shape}, next_state shape {next_state.shape}, done shape {done.shape}")
 
 	action_oh = F.one_hot(action.long(), num_classes=mac.n_actions).float()
 		
@@ -60,6 +60,7 @@ def update_sac(mac, replay_buffer, batch_size=64):
 			alpha2 = mac.alpha2.detach() if isinstance(mac.alpha2, torch.Tensor) else mac.alpha2
 			entropy_term = alpha1 * next_log_prob.unsqueeze(1) if mac.use_entropy else 0.0
 			information_bonus_term = alpha2 * next_information_bonus_val if mac.use_information_bonus else 0.0
+			# print(f"Entropy term: {entropy_term}, Information bonus term: {information_bonus_term}")
 			target_q = next_q_target - entropy_term + information_bonus_term
 			target_q_value = reward_for_target + (1 - done.unsqueeze(1)) * mac.gamma * target_q
 			
@@ -148,6 +149,7 @@ def update_sac(mac, replay_buffer, batch_size=64):
 		
 		action, log_prob, action_probs = actor.sample(obs_a)
 		# print(f"Sampled action shape: {action.shape}, log_prob shape: {log_prob.shape}, action_probs shape: {action_probs.shape}")
+		# print(f"Action probabilities for agent {a_i}: {action_probs}")
 		entropy = Categorical(action_probs).entropy().mean()
 		alpha1 = mac.alpha1.detach() if isinstance(mac.alpha1, torch.Tensor) else mac.alpha1
 		alpha2 = mac.alpha2.detach() if isinstance(mac.alpha2, torch.Tensor) else mac.alpha2
