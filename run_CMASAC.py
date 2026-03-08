@@ -14,7 +14,7 @@ except Exception:
 	imageio = None
 def run_training(
 	env_id='MultiGrid-MultiTargetEmpty-8x8-v0',
-	num_agents=3,
+	num_agents=2,
 	episodes=5000,
 	steps_per_episode=40,
 	replay_size=int(1e6),
