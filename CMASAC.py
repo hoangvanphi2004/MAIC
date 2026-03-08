@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 
 from bayesian.Bayesian_sampling import EnsembleRegressor
 
+scaled_coef = 0.1
+
 class ReplayBuffer:
 	def __init__(self, capacity):
 		self.buffer = deque(maxlen=capacity)
@@ -246,7 +248,7 @@ class SAC_REINFORCE:
 		
 		mean_ens, var_total, std_total, std_ale, std_epi = self.ensemble_regressor.mixture_mean_var(ensemble_input_norm, return_decomposed=True)
 		info_gain = torch.sum(torch.log(1 + (std_epi ** 2) / (std_ale ** 2 + 1e-8)), dim=-1, keepdim=True)	
-		info_gain = self.information_bonus_normalizer.normalize(info_gain) * 0.1
+		info_gain = self.information_bonus_normalizer.normalize(info_gain)
 		
 		return info_gain
 
@@ -290,7 +292,7 @@ class SAC_REINFORCE:
 			self.output_normalizer.update(next_state_flat)
 
 			info_bonus = self.information_bonus(state, actions_oh) 
-			self.information_bonus_normalizer.update(info_bonus * 10)
+			self.information_bonus_normalizer.update(info_bonus)
 
 		t3 = time.time()
 		# Update critic
@@ -313,8 +315,9 @@ class SAC_REINFORCE:
 			next_q_target = torch.min(next_q1_target, next_q2_target)
 
 			info_bonus = self.information_bonus(next_state, next_actions_oh)
+			scaled_info_bonus = scaled_coef * info_bonus
 
-			target_q = next_q_target - self.alpha1 * next_log_prob.unsqueeze(1) + self.alpha2 * info_bonus
+			target_q = next_q_target - self.alpha1 * next_log_prob.unsqueeze(1) + self.alpha2 * scaled_info_bonus
 			# target_q = next_q_target - self.alpha1 * next_log_prob.unsqueeze(1)
 			target_q_value = reward_for_target + (1 - done.unsqueeze(1)) * self.gamma * target_q
 		action_oh = F.one_hot(action.long(), num_classes=self.n_actions).float()
@@ -350,8 +353,9 @@ class SAC_REINFORCE:
 			alpha2 = self.alpha2.detach() if isinstance(self.alpha2, torch.Tensor) else self.alpha2
 
 			info_bonus = self.information_bonus(state, actions_oh)
+			scaled_info_bonus = scaled_coef * info_bonus
 
-			policy_loss_a = (((alpha1 * (new_log_probs + 1) - advantages - alpha2 * info_bonus).detach() * new_log_probs).mean())
+			policy_loss_a = (((alpha1 * (new_log_probs + 1) - advantages - alpha2 * scaled_info_bonus).detach() * new_log_probs).mean())
 			# policy_loss_a = ((alpha1 * (new_log_probs + 1) - advantages).detach() * new_log_probs).mean()
 
 			total_policy_loss += policy_loss_a
