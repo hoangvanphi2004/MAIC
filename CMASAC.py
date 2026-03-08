@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 from bayesian.Bayesian_sampling import EnsembleRegressor
 
-scaled_coef = 0
+scaled_coef = 0.001
 eps = 1e-8
 
 class ReplayBuffer:
