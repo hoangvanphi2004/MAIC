@@ -1,6 +1,5 @@
 import time
 
-import mac
 import numpy as np
 import torch
 import torch.nn as nn
@@ -16,7 +15,8 @@ import matplotlib.pyplot as plt
 
 from bayesian.Bayesian_sampling import EnsembleRegressor
 
-scaled_coef = 0.1
+scaled_coef = 0
+eps = 1e-8
 
 class ReplayBuffer:
 	def __init__(self, capacity):
@@ -51,7 +51,7 @@ class Actor(nn.Module):
 		return action_probs
 	def sample(self, obs):
 		action_probs = self.forward(obs)
-		action_probs = action_probs + 1e-8
+		action_probs = action_probs + eps
 		action_probs = action_probs / action_probs.sum(dim=-1, keepdim=True)
 		dist = Categorical(action_probs)
 		action = dist.sample()
@@ -180,12 +180,12 @@ class SAC_REINFORCE:
 		
 		self.auto_entropy_tuning = auto_entropy_tuning
 		if self.auto_entropy_tuning:
-			self.target_entropy = -float(self.num_agents * action_dim)
-			self.log_alpha1 = torch.zeros(1, requires_grad=True, device=self.device)
+			self.target_entropy = float(self.num_agents * action_dim) * 0.2
+			self.log_alpha1 = torch.tensor([alpha1], requires_grad=True, device=self.device)
 			self.alpha1_optimizer = optim.Adam([self.log_alpha1], lr=lr)
 			self.alpha1 = self.log_alpha1.exp()
 
-			self.log_alpha2 = torch.zeros(1, requires_grad=True, device=self.device)
+			self.log_alpha2 = torch.tensor([alpha2], requires_grad=True, device=self.device)
 			self.alpha2_optimizer = optim.Adam([self.log_alpha2], lr=lr)
 			self.alpha2 = self.log_alpha2.exp()
 		else:
@@ -247,7 +247,7 @@ class SAC_REINFORCE:
 		ensemble_input_norm = self.input_normalizer.normalize(ensemble_input)
 		
 		mean_ens, var_total, std_total, std_ale, std_epi = self.ensemble_regressor.mixture_mean_var(ensemble_input_norm, return_decomposed=True)
-		info_gain = torch.sum(torch.log(1 + (std_epi ** 2) / (std_ale ** 2 + 1e-8)), dim=-1, keepdim=True)	
+		info_gain = torch.sum(torch.log((eps ** 2) + (std_epi ** 2)), dim=-1, keepdim=True)	
 		info_gain = self.information_bonus_normalizer.normalize(info_gain)
 		
 		return info_gain
@@ -318,7 +318,6 @@ class SAC_REINFORCE:
 			scaled_info_bonus = scaled_coef * info_bonus
 
 			target_q = next_q_target - self.alpha1 * next_log_prob.unsqueeze(1) + self.alpha2 * scaled_info_bonus
-			# target_q = next_q_target - self.alpha1 * next_log_prob.unsqueeze(1)
 			target_q_value = reward_for_target + (1 - done.unsqueeze(1)) * self.gamma * target_q
 		action_oh = F.one_hot(action.long(), num_classes=self.n_actions).float()
 		q1, q2 = self.critic(state, action_oh)
@@ -356,7 +355,6 @@ class SAC_REINFORCE:
 			scaled_info_bonus = scaled_coef * info_bonus
 
 			policy_loss_a = (((alpha1 * (new_log_probs + 1) - advantages - alpha2 * scaled_info_bonus).detach() * new_log_probs).mean())
-			# policy_loss_a = ((alpha1 * (new_log_probs + 1) - advantages).detach() * new_log_probs).mean()
 
 			total_policy_loss += policy_loss_a
 			total_entropy += entropy.item()
@@ -417,7 +415,6 @@ class SAC_REINFORCE:
 			self.alpha2_optimizer.zero_grad()
 			alpha2_loss.backward()
 			self.alpha2_optimizer.step()
-			# alpha2_loss = torch.tensor(0.0)  # Placeholder since info bonus is not currently used
 			self.alpha2 = self.log_alpha2.exp()
 
 			alpha_info = {
