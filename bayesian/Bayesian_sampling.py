@@ -9,46 +9,76 @@ import numpy as np
 
 
 class BaseNet(nn.Module):
-    def __init__(self, in_dim: int, out_dim: int = 1, hidden: int = 128, nlayers: int = 2):
+
+    def __init__(self, in_dim: int, out_dim: int = 1, hidden: int = 128, nlayers: int = 2, 
+                 use_random_prior: bool = True, init_seed: Optional[int] = None):
         super().__init__()
+        
+        # Set unique random seed for diverse initialization
+        if init_seed is not None:
+            torch.manual_seed(init_seed)
+            np.random.seed(init_seed)
+        
+        # Random projection layer (frozen, not trained) for diversity on unseen states
+        self.use_random_prior = use_random_prior
+        if use_random_prior:
+            self.random_projection = nn.Linear(in_dim, hidden, bias=True)
+            # Initialize with diverse weights and FREEZE
+            nn.init.orthogonal_(self.random_projection.weight, gain=np.random.uniform(0.5, 2.0))
+            nn.init.uniform_(self.random_projection.bias, -1.0, 1.0)
+            # Freeze this layer
+            for param in self.random_projection.parameters():
+                param.requires_grad = False
+            proj_out = hidden
+        else:
+            self.random_projection = None
+            proj_out = in_dim
+        
         layers = []
-        last = in_dim
+        last = proj_out
         for _ in range(nlayers):
             layers.append(nn.Linear(last, hidden))
-            layers.append(nn.ReLU())
+            layers.append(nn.LayerNorm(hidden))
+            layers.append(nn.SiLU())
             last = hidden
         self.feature = nn.Sequential(*layers)
         self.mean_head = nn.Linear(last, out_dim)
-        self.logvar_head = nn.Linear(last, out_dim)
+        self.var_head = nn.Linear(last, out_dim)
         
+        # Diverse initialization with different scales
+        init_scale = np.random.uniform(0.5, 2.0) if init_seed is not None else 1.0
         for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+            if isinstance(m, nn.Linear) and m is not self.random_projection:
+                nn.init.orthogonal_(m.weight, gain=np.sqrt(2) * init_scale)
                 nn.init.constant_(m.bias, 0.0)
-        nn.init.constant_(self.logvar_head.bias, -1.0)
+        nn.init.constant_(self.var_head.bias, -1.0)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Apply frozen random projection for diversity on unseen inputs
+        if self.use_random_prior:
+            x = torch.relu(self.random_projection(x))
+        
         h = self.feature(x)
         mu = self.mean_head(h)
-        logvar = self.logvar_head(h)
-        logvar = torch.clamp(logvar, -10.0, 5.0)
+        # Softplus ensures variance is strictly positive
+        var = torch.nn.functional.softplus(self.var_head(h)) + 1e-6
         if mu.shape[-1] == 1:
             mu = mu.squeeze(-1)
-            logvar = logvar.squeeze(-1)
-        return mu, logvar
+            var = var.squeeze(-1)
+        return mu, var
 
 
-def gaussian_nll(mu: torch.Tensor, logvar: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-    var = torch.exp(logvar)
-    return 0.5 * (math.log(2 * math.pi) + logvar + (y - mu) ** 2 / var)
+def gaussian_nll(mu: torch.Tensor, var: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    # 0.5 * log(2*pi) is approx 0.9189, using math.log(2 * math.pi) directly
+    return 0.5 * (math.log(2 * math.pi) + torch.log(var) + (y - mu) ** 2 / var)
 
 
 def fgsm_attack(model: nn.Module, x: torch.Tensor, y: torch.Tensor, eps: float) -> torch.Tensor:
     x_adv = x.clone().detach().requires_grad_(True)
-    mu, logvar = model(x_adv)
-    loss = gaussian_nll(mu, logvar, y).mean()
-    loss.backward()
-    grad = x_adv.grad
+    mu, var = model(x_adv) # Updated to return var instead of logvar
+    loss = gaussian_nll(mu, var, y).mean()
+    # Use torch.autograd.grad to prevent accumulating gradients in model parameters
+    grad = torch.autograd.grad(loss, x_adv)[0]
     if grad is None:
         return x.detach()
     x_adv = x_adv + eps * grad.sign()
@@ -56,12 +86,22 @@ def fgsm_attack(model: nn.Module, x: torch.Tensor, y: torch.Tensor, eps: float) 
 
 
 class EnsembleRegressor:
-
-    def __init__(self, M: int, in_dim: int, out_dim: int = 1, hidden: int = 128, nlayers: int = 2, device: Optional[torch.device] = None):
+    def __init__(self, M: int, in_dim: int, out_dim: int = 1, hidden: int = 128, nlayers: int = 2, 
+                 device: Optional[torch.device] = None, use_random_prior: bool = True, base_seed: int = 42):
         self.M = M
         self.out_dim = out_dim
         self.device = device or (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
-        self.models: List[BaseNet] = [BaseNet(in_dim, out_dim, hidden, nlayers).to(self.device) for _ in range(M)]
+        
+        # Create models with diverse initializations
+        self.models: List[BaseNet] = []
+        for i in range(M):
+            # Each model gets a unique seed for diverse initialization
+            model_seed = base_seed + i * 1000
+            model = BaseNet(in_dim, out_dim, hidden, nlayers, 
+                          use_random_prior=use_random_prior, 
+                          init_seed=model_seed).to(self.device)
+            self.models.append(model)
+        
         self.optimizers: Optional[List[optim.Optimizer]] = None
 
     def parameters(self):
@@ -88,9 +128,9 @@ class EnsembleRegressor:
         mus = []
         vars_ = []
         for m in self.models:
-            mu, logvar = m(x)
+            mu, var = m(x)  # Updated to expect var directly
             mus.append(mu.unsqueeze(0))
-            vars_.append(torch.exp(logvar).unsqueeze(0))
+            vars_.append(var.unsqueeze(0))
         mus = torch.cat(mus, dim=0)
         vars_ = torch.cat(vars_, dim=0)
         return mus, vars_
@@ -130,21 +170,20 @@ class EnsembleRegressor:
         mus, vars_ = self.predict_per_model(x)
         comps = torch.randint(0, self.M, size=(n_samples, batch), device=self.device)
         if self.out_dim == 1:
-            out = torch.empty(n_samples, batch, device=self.device)
-            for i in range(n_samples):
-                idx = comps[i]
-                mu_i = mus[idx, torch.arange(batch, device=self.device)]
-                var_i = vars_[idx, torch.arange(batch, device=self.device)]
-                std_i = torch.sqrt(var_i)
-                out[i] = mu_i + std_i * torch.randn(batch, device=self.device)
+            # comps shape: (n_samples, batch). mus shape: (M, batch)
+            mu_samples = torch.gather(mus, 0, comps)
+            var_samples = torch.gather(vars_, 0, comps)
+            std_samples = torch.sqrt(var_samples)
+            eps = torch.randn(n_samples, batch, device=self.device)
+            out = mu_samples + std_samples * eps
         else:
-            out = torch.empty(n_samples, batch, self.out_dim, device=self.device)
-            for i in range(n_samples):
-                idx = comps[i]
-                mu_i = mus[idx, torch.arange(batch, device=self.device)]
-                var_i = vars_[idx, torch.arange(batch, device=self.device)]
-                std_i = torch.sqrt(var_i)
-                out[i] = mu_i + std_i * torch.randn(batch, self.out_dim, device=self.device)
+            # comps needs to match mus shape: (M, batch, out_dim)
+            comps_exp = comps.unsqueeze(-1).expand(-1, -1, self.out_dim)
+            mu_samples = torch.gather(mus, 0, comps_exp)
+            var_samples = torch.gather(vars_, 0, comps_exp)
+            std_samples = torch.sqrt(var_samples)
+            eps = torch.randn(n_samples, batch, self.out_dim, device=self.device)
+            out = mu_samples + std_samples * eps
         return out
 
     def setup_optimizers(self, lr: float = 1e-3, weight_decay: float = 1e-5):
@@ -158,18 +197,24 @@ class EnsembleRegressor:
         yb = yb.to(self.device).float()
 
         total_loss = 0.0
+        batch_size = xb.shape[0]
 
         for i, m in enumerate(self.models):
             m.train()
             self.optimizers[i].zero_grad()
+            
+            # Bootstrapping: Randomly sample (with replacement) for diversity
+            indices = torch.randint(0, batch_size, (batch_size,), device=self.device)
+            xb_model = xb[indices]
+            yb_model = yb[indices]
 
-            mu, logvar = m(xb)
-            loss = gaussian_nll(mu, logvar, yb).mean()
+            mu, var = m(xb_model)
+            loss = gaussian_nll(mu, var, yb_model).mean()
 
             if eps_adv > 0.0:
-                xb_adv = fgsm_attack(m, xb, yb, eps_adv)
-                mu2, logvar2 = m(xb_adv)
-                loss = loss + gaussian_nll(mu2, logvar2, yb).mean()
+                xb_adv = fgsm_attack(m, xb_model, yb_model, eps_adv)
+                mu2, var2 = m(xb_adv)
+                loss = loss + gaussian_nll(mu2, var2, yb_model).mean()
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
@@ -201,12 +246,15 @@ def train_ensemble(
         y_var = float(torch.var(y_train).item())
     except Exception:
         y_var = 1.0
-    init_logvar = math.log(max(1e-8, y_var))
+    # For softplus initialization, to get approx target variance
+    # softplus(x) = var => exp(x) = exp(var) - 1 => x = log(exp(var) - 1)
+    init_val = math.log(max(1e-8, math.exp(max(1e-6, y_var)) - 1.0)) if y_var < 50 else float(y_var)
+    
     for m in ensemble.models:
         with torch.no_grad():
-            if hasattr(m, 'logvar_head'):
+            if hasattr(m, 'var_head'):
                 try:
-                    m.logvar_head.bias.data.fill_(init_logvar)
+                    m.var_head.bias.data.fill_(init_val)
                 except Exception:
                     pass
 
