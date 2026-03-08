@@ -46,7 +46,7 @@ class PassSparseEnv(MultiGridEnv):
         size: int = 30,
         num_agents: int = 2,
         max_steps: int | None = None,
-        team_reward: float = 1.0,
+        team_reward: float = 100,
         only_turn_and_forward: bool = False,
         **kwargs,
     ):
@@ -172,6 +172,11 @@ class PassSparseEnv(MultiGridEnv):
                         agent_present = np.bitwise_and.reduce(self.agent_states.pos == fwd_pos, axis=1).any()
                         if agent_present:
                             continue
+                    # Track if agent crosses the door (boundary)
+                    old_x = agent.state.pos[0]
+                    new_x = fwd_pos[0]
+                    if (old_x <= self.split_x < new_x) or (new_x <= self.split_x < old_x):
+                        print(f"Agent {i} passed through the door! Position: {fwd_pos}")
                     agent.state.pos = fwd_pos
             # ignore other actions
 
