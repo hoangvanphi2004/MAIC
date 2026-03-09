@@ -31,10 +31,13 @@ def run_training(
 	record_video=False,
 	video_every=500,
 	plot_every=50,
-	coef=0.0,
+	info_coef=0.0,
+	entropy_coef=0.0,
 ):
-	CMASAC.scaled_coef = float(coef)
-	print('scaled_coef:', CMASAC.scaled_coef)
+	CMASAC.scaled_information_gain_coef = float(info_coef)
+	CMASAC.scaled_entropy_coef = float(entropy_coef)
+	print('scaled_information_gain_coef:', CMASAC.scaled_information_gain_coef)
+	print('scaled_entropy_coef:', CMASAC.scaled_entropy_coef)
 
 	run_path = Path(model_dir)
 	run_path.mkdir(parents=True, exist_ok=True)
@@ -261,7 +264,8 @@ def run_training(
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Train CMASAC with configurable observation mode and information bonus coefficient.')
 	parser.add_argument('--simple', action='store_true', help='Use simple obs/state: obs=[x,y,dir], state=concat of all agent obs.')
-	parser.add_argument('--coef', type=float, default=0.0, help='Set CMASAC.scaled_coef (e.g. --coef 0).')
+	parser.add_argument('--info_coef', type=float, default=0.0, help='Set CMASAC.scaled_information_gain_coef (e.g. --info_coef 0).')
+	parser.add_argument('--entropy_coef', type=float, default=0.0, help='Set CMASAC.scaled_entropy_coef (e.g. --entropy_coef 0).')
 	args = parser.parse_args()
 
 	obs_mode = 'simple' if args.simple else 'full'
@@ -276,5 +280,6 @@ if __name__ == '__main__':
 		video_every=100,
 		plot_every=10,
 		record_video=True,
-		coef=args.coef,
+		scaled_information_gain_coef=args.info_coef,
+		scaled_entropy_coef=args.entropy_coef
 	)
