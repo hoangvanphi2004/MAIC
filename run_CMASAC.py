@@ -31,11 +31,11 @@ def run_training(
 	record_video=False,
 	video_every=500,
 	plot_every=50,
-	info_coef=0.0,
-	entropy_coef=0.0,
+	scaled_information_gain_coef=0.0,
+	scaled_entropy_coef=0.0,
 ):
-	CMASAC.scaled_information_gain_coef = float(info_coef)
-	CMASAC.scaled_entropy_coef = float(entropy_coef)
+	CMASAC.scaled_information_gain_coef = float(scaled_information_gain_coef)
+	CMASAC.scaled_entropy_coef = float(scaled_entropy_coef)
 	print('scaled_information_gain_coef:', CMASAC.scaled_information_gain_coef)
 	print('scaled_entropy_coef:', CMASAC.scaled_entropy_coef)
 
