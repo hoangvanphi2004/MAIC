@@ -15,7 +15,8 @@ import matplotlib.pyplot as plt
 
 from bayesian.Bayesian_sampling import EnsembleRegressor
 
-scaled_coef = 0
+scaled_information_gain_coef = 0
+scaled_entropy_coef = 0
 eps = 1e-8
 
 class ReplayBuffer:
@@ -348,9 +349,9 @@ class SAC_REINFORCE:
 			next_q_target = torch.min(next_q1_target, next_q2_target)
 
 			info_bonus = self.information_bonus(next_state, next_actions_oh)
-			scaled_info_bonus = scaled_coef * info_bonus
-
-			target_q = next_q_target - self.alpha1 * next_log_prob.unsqueeze(1) + self.alpha2 * scaled_info_bonus
+			scaled_info_bonus = scaled_information_gain_coef * info_bonus
+			scaled_next_log_prob = scaled_entropy_coef * next_log_prob
+			target_q = next_q_target - self.alpha1 * scaled_next_log_prob.unsqueeze(1) + self.alpha2 * scaled_info_bonus
 			target_q_value = reward_for_target + (1 - done.unsqueeze(1)) * self.gamma * target_q
 		action_oh = F.one_hot(action.long(), num_classes=self.n_actions).float()
 		q1, q2 = self.critic(state, action_oh)
@@ -385,9 +386,9 @@ class SAC_REINFORCE:
 			alpha2 = self.alpha2.detach() if isinstance(self.alpha2, torch.Tensor) else self.alpha2
 
 			info_bonus = self.information_bonus(state, actions_oh)
-			scaled_info_bonus = scaled_coef * info_bonus
-
-			policy_loss_a = (((alpha1 * (new_log_probs + 1) - advantages - alpha2 * scaled_info_bonus).detach() * new_log_probs).mean())
+			scaled_info_bonus = scaled_information_gain_coef * info_bonus
+			scaled_next_log_prob = scaled_entropy_coef * new_log_probs
+			policy_loss_a = (((alpha1 * (scaled_next_log_prob + 1) - advantages - alpha2 * scaled_info_bonus).detach() * new_log_probs).mean())
 
 			total_policy_loss += policy_loss_a
 			total_entropy += entropy.item()
