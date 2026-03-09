@@ -387,8 +387,7 @@ class SAC_REINFORCE:
 
 			info_bonus = self.information_bonus(state, actions_oh)
 			scaled_info_bonus = scaled_information_gain_coef * info_bonus
-			scaled_next_log_prob = scaled_entropy_coef * new_log_probs
-			policy_loss_a = (((alpha1 * (scaled_next_log_prob + 1) - advantages - alpha2 * scaled_info_bonus).detach() * new_log_probs).mean())
+			policy_loss_a = (((alpha1 * scaled_entropy_coef * (new_log_probs + 1) - advantages - alpha2 * scaled_info_bonus).detach() * new_log_probs).mean())
 
 			total_policy_loss += policy_loss_a
 			total_entropy += entropy.item()
