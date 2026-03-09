@@ -34,20 +34,34 @@ class ReplayBuffer:
 class Actor(nn.Module):
 	def __init__(self, obs_shape, action_dim, hidden_dim=128):
 		super(Actor, self).__init__()
-		self.conv1 = nn.Conv2d(obs_shape[2], 16, kernel_size=4, stride=2, padding=1)
-		self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
-		def conv2d_size_out(size, kernel_size=4, stride=2, padding=1):
-			return (size + 2 * padding - kernel_size) // stride + 1
-		h = conv2d_size_out(conv2d_size_out(obs_shape[0]))
-		w = conv2d_size_out(conv2d_size_out(obs_shape[1]))
-		linear_input_size = h * w * 32
-		self.fc1 = nn.Linear(linear_input_size, action_dim)
+		self.is_image_obs = len(obs_shape) == 3
+		if self.is_image_obs:
+			self.conv1 = nn.Conv2d(obs_shape[2], 16, kernel_size=4, stride=2, padding=1)
+			self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
+			def conv2d_size_out(size, kernel_size=4, stride=2, padding=1):
+				return (size + 2 * padding - kernel_size) // stride + 1
+			h = conv2d_size_out(conv2d_size_out(obs_shape[0]))
+			w = conv2d_size_out(conv2d_size_out(obs_shape[1]))
+			linear_input_size = h * w * 32
+			self.fc1 = nn.Linear(linear_input_size, action_dim)
+		else:
+			obs_dim = int(np.prod(obs_shape))
+			self.fc1 = nn.Linear(obs_dim, hidden_dim)
+			self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+			self.out = nn.Linear(hidden_dim, action_dim)
 	def forward(self, obs):
-		x = obs
-		x = F.relu(self.conv1(x))
-		x = F.relu(self.conv2(x))
-		x = x.reshape(x.size(0), -1)
-		action_probs = F.softmax(self.fc1(x), dim=-1)
+		if self.is_image_obs:
+			x = obs
+			x = F.relu(self.conv1(x))
+			x = F.relu(self.conv2(x))
+			x = x.reshape(x.size(0), -1)
+			action_logits = self.fc1(x)
+		else:
+			x = obs.reshape(obs.size(0), -1)
+			x = F.relu(self.fc1(x))
+			x = F.relu(self.fc2(x))
+			action_logits = self.out(x)
+		action_probs = F.softmax(action_logits, dim=-1)
 		return action_probs
 	def sample(self, obs):
 		action_probs = self.forward(obs)
@@ -62,14 +76,18 @@ class Critic(nn.Module):
 		super(Critic, self).__init__()
 		self.num_agents = num_agents
 		self._action_dim_per_agent = action_dim_per_agent
-		# Global state input: [batch, channels, height, width]
-		self.conv1 = nn.Conv2d(state_shape[2], 16, kernel_size=4, stride=2, padding=1)
-		self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
-		def conv2d_size_out(size, kernel_size=4, stride=2, padding=1):
-			return (size + 2 * padding - kernel_size) // stride + 1
-		h = conv2d_size_out(conv2d_size_out(state_shape[0]))
-		w = conv2d_size_out(conv2d_size_out(state_shape[1]))
-		embed_size = h * w * 32
+		self.is_image_state = len(state_shape) == 3
+		if self.is_image_state:
+			# Global state input: [batch, channels, height, width]
+			self.conv1 = nn.Conv2d(state_shape[2], 16, kernel_size=4, stride=2, padding=1)
+			self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
+			def conv2d_size_out(size, kernel_size=4, stride=2, padding=1):
+				return (size + 2 * padding - kernel_size) // stride + 1
+			h = conv2d_size_out(conv2d_size_out(state_shape[0]))
+			w = conv2d_size_out(conv2d_size_out(state_shape[1]))
+			embed_size = h * w * 32
+		else:
+			embed_size = int(np.prod(state_shape))
 		joint_input_size = embed_size + num_agents * action_dim_per_agent
 		self.q1_fc1 = nn.Linear(joint_input_size, hidden_dim)
 		self.q1_fc2 = nn.Linear(hidden_dim, hidden_dim)
@@ -80,14 +98,16 @@ class Critic(nn.Module):
 	def encode_global_state(self, state):
 		"""Encode global state with CNN.
 		Args:
-			state: [batch, channels, height, width]
+			state: [batch, channels, height, width] for image state,
+				or [batch, state_dim] for vector state
 		Returns:
 			embedding: [batch, embed_size]
 		"""
-		x = F.relu(self.conv1(state))
-		x = F.relu(self.conv2(x))
-		x = x.reshape(x.size(0), -1)
-		return x
+		if self.is_image_state:
+			x = F.relu(self.conv1(state))
+			x = F.relu(self.conv2(x))
+			return x.reshape(x.size(0), -1)
+		return state.reshape(state.size(0), -1)
 	def forward(self, state, actions):
 		"""
 		Args:
@@ -164,6 +184,8 @@ class SAC_REINFORCE:
 		self.tau = tau
 		self.n_actions = action_dim
 		self.num_agents = num_agents
+		self.obs_is_image = len(obs_shape) == 3
+		self.state_is_image = len(state_shape) == 3
 
 		self.actors = [Actor(obs_shape, action_dim, hidden_dim).to(self.device)
 					   for _ in range(self.num_agents)]
@@ -192,8 +214,9 @@ class SAC_REINFORCE:
 			self.alpha1 = alpha1
 			self.alpha2 = alpha2
 		
-		self.input_ensemble_shape = state_shape[0] * state_shape[1] * state_shape[2] + action_dim * num_agents
-		self.output_ensemble_shape = state_shape[0] * state_shape[1] * state_shape[2]
+		state_dim = int(np.prod(state_shape))
+		self.input_ensemble_shape = state_dim + action_dim * num_agents
+		self.output_ensemble_shape = state_dim
 		self.ensemble_regressor = EnsembleRegressor(in_dim=self.input_ensemble_shape, out_dim=self.output_ensemble_shape, M=5, hidden=256, device=self.device)
 		self.ensemble_regressor.setup_optimizers(3e-4)
 
@@ -209,7 +232,9 @@ class SAC_REINFORCE:
 			actions = []
 			log_probs = []
 			for i, actor in enumerate(self.actors):
-				s = torch.FloatTensor(obs_arr[i]).permute(2, 0, 1).unsqueeze(0).to(self.device)
+				s = torch.FloatTensor(obs_arr[i]).unsqueeze(0).to(self.device)
+				if self.obs_is_image:
+					s = s.permute(0, 3, 1, 2)
 				if evaluate:
 					action_probs = actor(s)
 					action = torch.argmax(action_probs, dim=-1)
@@ -270,12 +295,20 @@ class SAC_REINFORCE:
 		
 		t1 = time.time()
 		obs, state, action, reward, next_obs, next_state, done = replay_buffer.sample(batch_size)
-		state = torch.FloatTensor(state).permute(0, 3, 1, 2).to(self.device)
-		obs = torch.FloatTensor(obs).permute(0, 1, 4, 2, 3).to(self.device)
+		state = torch.FloatTensor(state).to(self.device)
+		if self.state_is_image:
+			state = state.permute(0, 3, 1, 2)
+		obs = torch.FloatTensor(obs).to(self.device)
+		if self.obs_is_image:
+			obs = obs.permute(0, 1, 4, 2, 3)
 		action = torch.LongTensor(action).to(self.device)
 		reward = torch.FloatTensor(reward).to(self.device)
-		next_obs = torch.FloatTensor(next_obs).permute(0, 1, 4, 2, 3).to(self.device)
-		next_state = torch.FloatTensor(next_state).permute(0, 3, 1, 2).to(self.device)
+		next_obs = torch.FloatTensor(next_obs).to(self.device)
+		if self.obs_is_image:
+			next_obs = next_obs.permute(0, 1, 4, 2, 3)
+		next_state = torch.FloatTensor(next_state).to(self.device)
+		if self.state_is_image:
+			next_state = next_state.permute(0, 3, 1, 2)
 		done = torch.FloatTensor(done).to(self.device)
 		
 		t2 = time.time()
