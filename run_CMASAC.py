@@ -1,11 +1,13 @@
 import time
 import warnings
 import json
+import argparse
 from pathlib import Path
 import gymnasium as gym
 import multigrid.envs
 import numpy as np
 import torch
+import CMASAC
 from CMASAC import ReplayBuffer, SAC_REINFORCE
 from plot_utils import save_plots
 try:
@@ -13,8 +15,9 @@ try:
 except Exception:
 	imageio = None
 def run_training(
-	env_id='MultiGrid-MultiTargetEmpty-8x8-v0',
+	env_id='MultiGrid-MultiTargetEmpty-16x16-v0',
 	num_agents=2,
+	obs_state_mode='simple',
 	episodes=5000,
 	steps_per_episode=40,
 	replay_size=int(1e6),
@@ -28,7 +31,11 @@ def run_training(
 	record_video=False,
 	video_every=500,
 	plot_every=50,
+	coef=0.0,
 ):
+	CMASAC.scaled_coef = float(coef)
+	print('scaled_coef:', CMASAC.scaled_coef)
+
 	run_path = Path(model_dir)
 	run_path.mkdir(parents=True, exist_ok=True)
 	if record_video:
@@ -38,15 +45,32 @@ def run_training(
 			env = gym.make(env_id, num_agents=num_agents, max_steps = steps_per_episode)
 	else:
 		env = gym.make(env_id, num_agents=num_agents, max_steps = steps_per_episode)
+	if obs_state_mode not in ('full', 'simple'):
+		raise ValueError(f"obs_state_mode must be 'full' or 'simple', got: {obs_state_mode}")
+
+	def _extract_obs_state(obs_dict, info_dict):
+		if obs_state_mode == 'full':
+			obs_out = np.array([np.array(o['image'], dtype=np.float32) for _, o in obs_dict.items()])
+			state_out = np.array(info_dict['state'], dtype=np.float32)
+			return obs_out, state_out
+
+		# simple mode: each agent obs = [x, y, direction], state = concat of all agents obs
+		agent_states = env.unwrapped.agent_states
+		obs_simple = []
+		for i in range(num_agents):
+			x, y = agent_states.pos[i]
+			direction = agent_states.dir[i]
+			obs_simple.append(np.array([x, y, direction], dtype=np.float32))
+		obs_out = np.stack(obs_simple, axis=0)
+		state_out = obs_out.reshape(-1).astype(np.float32)
+		return obs_out, state_out
+
 	obs0, info = env.reset()
-	first_obs = list(obs0.values())[0]
-	if isinstance(first_obs, dict) and 'image' in first_obs:
-		obs_shape = first_obs['image'].shape
-	else:
-		obs_shape = env.observation_space[0]['image'].shape
-	state_shape = info['state'].shape
+	obs0_arr, state0_arr = _extract_obs_state(obs0, info)
+	obs_shape = obs0_arr.shape[1:]
+	state_shape = state0_arr.shape
 	action_dim = env.action_space[0].n
-	print('Env:', env_id, 'num_agents:', num_agents, 'obs_shape:', obs_shape, 'state_shape:', state_shape, 'action_dim:', action_dim)
+	print('Env:', env_id, 'num_agents:', num_agents, 'mode:', obs_state_mode, 'obs_shape:', obs_shape, 'state_shape:', state_shape, 'action_dim:', action_dim)
 	agent = SAC_REINFORCE(
 		obs_shape,
 		state_shape,
@@ -89,8 +113,7 @@ def run_training(
 
 	for ep in range(episodes):
 		obs_dict, info = env.reset()
-		obs = np.array([np.array(o['image'], dtype=np.float32) for _, o in obs_dict.items()])
-		state = np.array(info['state'], dtype=np.float32)
+		obs, state = _extract_obs_state(obs_dict, info)
 		ep_reward = 0.0
 		ep_len = 0
 		ep_actor_losses = []
@@ -119,8 +142,7 @@ def run_training(
 			dones = np.array([terminated[i] or truncated[i] for i in terminated.keys()])
 			rewards_list = [rewards_dict[i] for i in range(num_agents)]
 			shared_reward = float(sum(rewards_list))
-			next_obs = np.array([np.array(o['image'], dtype=np.float32) for _, o in next_obs_dict.items()])
-			next_state = np.array(info['state'], dtype=np.float32)
+			next_obs, next_state = _extract_obs_state(next_obs_dict, info)
 			done = dones.all() or (step == steps_per_episode - 1)
 			if record_this_ep:
 				try:
@@ -234,8 +256,18 @@ def run_training(
 	print(f"Rewards saved to {rewards_path}")
 	print('Training finished. Saved final model.')
 	return metrics
+
+
 if __name__ == '__main__':
+	parser = argparse.ArgumentParser(description='Train CMASAC with configurable observation mode and information bonus coefficient.')
+	parser.add_argument('--simple', action='store_true', help='Use simple obs/state: obs=[x,y,dir], state=concat of all agent obs.')
+	parser.add_argument('--coef', type=float, default=0.0, help='Set CMASAC.scaled_coef (e.g. --coef 0).')
+	args = parser.parse_args()
+
+	obs_mode = 'simple' if args.simple else 'full'
+
 	run_training(
+		obs_state_mode=obs_mode,
 		episodes=5000,
 		steps_per_episode=40,
 		batch_size=1024,
@@ -244,4 +276,5 @@ if __name__ == '__main__':
 		video_every=100,
 		plot_every=10,
 		record_video=True,
+		coef=args.coef,
 	)
