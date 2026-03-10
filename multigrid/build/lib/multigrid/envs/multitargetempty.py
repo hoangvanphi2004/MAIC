@@ -372,12 +372,9 @@ class MultiTargetEmptyEnv(MultiGridEnv):
     
     def _calculate_reward(self, base_reward):
         """
-        Calculate reward with gentle time-based decay.
-        Reward decreases slowly as episode progresses (max 20% reduction).
+        Calculate reward (no decay; decay replaced by step penalty).
         """
-        # Gentle decay: reward only decreases from 100% to 80% over the episode
-        decay_factor = 1.0 - 0.2 * (self.step_count / self.max_steps)
-        return base_reward * decay_factor
+        return base_reward
     
     def _reward(self):
         """

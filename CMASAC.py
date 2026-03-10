@@ -401,13 +401,12 @@ class SAC_REINFORCE:
 
 		t5 = time.time()
 		# Update ensemble model with current batch
-		if scaled_information_gain_coef > 0:
-			self.train_ensemble_model(state, actions_oh, next_state)
+		self.train_ensemble_model(state, actions_oh, next_state)
 		t6 = time.time()
 
 		# Update alpha1 and alpha2 if auto-tuning is enabled
 		alpha_info = {}
-		if self.auto_entropy_tuning and (scaled_information_gain_coef > 0 or scaled_entropy_coef > 0):
+		if self.auto_entropy_tuning:
 			# Update alpha1
 			with torch.no_grad():
 				sampled_logp = 0
