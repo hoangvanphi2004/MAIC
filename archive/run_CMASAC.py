@@ -6,7 +6,7 @@ import gymnasium as gym
 import multigrid.envs
 import numpy as np
 import torch
-from CMASAC_direct_gradient import EpisodeMemory, ReplayBuffer, SAC_REINFORCE
+from CMASAC import EpisodeMemory, ReplayBuffer, SAC_REINFORCE
 try:
 	import matplotlib.pyplot as plt
 except Exception:
