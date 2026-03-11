@@ -33,6 +33,8 @@ def run_training(
 	plot_every=50,
 	scaled_information_gain_coef=0.0,
 	scaled_entropy_coef=0.0,
+	alpha_kl=0.1,
+	policy_update_steps=3,
 ):
 	CMASAC.scaled_information_gain_coef = float(scaled_information_gain_coef)
 	CMASAC.scaled_entropy_coef = float(scaled_entropy_coef)
@@ -85,6 +87,8 @@ def run_training(
 		tau=0.02,
 		alpha1=0.02,
 		alpha2=0.02,
+		alpha_kl=alpha_kl,
+		policy_update_steps=policy_update_steps,
 		auto_entropy_tuning=True,
 	)
 	replay_buffer = ReplayBuffer(capacity=replay_size)
@@ -101,6 +105,7 @@ def run_training(
 		'alpha1_values': [],
 		'alpha2_values': [],
 		'information_gains': [],
+		'kl_divergences': [],
 	}
 	start_time = time.time()
 
@@ -128,6 +133,7 @@ def run_training(
 		ep_alpha1_values = []
 		ep_alpha2_values = []
 		ep_info_gains = []
+		ep_kl_divergences = []
 		frames = []
 		record_this_ep = False
 		if record_video:
@@ -166,6 +172,7 @@ def run_training(
 						ep_entropies.append(sac_stats.get('entropy', 0.0))
 						ep_q_values.append(sac_stats.get('q_value', 0.0))
 						ep_info_gains.append(sac_stats.get('information_gain', 0.0))
+						ep_kl_divergences.append(sac_stats.get('kl_divergence', 0.0))
 						if 'alpha1_loss' in sac_stats:
 							ep_alpha1_losses.append(sac_stats['alpha1_loss'])
 						if 'alpha2_loss' in sac_stats:
@@ -189,6 +196,7 @@ def run_training(
 		metrics['alpha1_values'].append(_mean_or_none(ep_alpha1_values))
 		metrics['alpha2_values'].append(_mean_or_none(ep_alpha2_values))
 		metrics['information_gains'].append(_mean_or_none(ep_info_gains))
+		metrics['kl_divergences'].append(_mean_or_none(ep_kl_divergences))
 		if (ep + 1) % 10 == 0:
 			recent_rewards = metrics['episode_rewards'][-10:]
 			recent_lengths = metrics['episode_lengths'][-10:]
@@ -200,6 +208,7 @@ def run_training(
 			recent_entropy = [x for x in metrics['entropies'][-10:] if x is not None]
 			recent_alpha1 = [x for x in metrics['alpha1_values'][-10:] if x is not None]
 			recent_alpha2 = [x for x in metrics['alpha2_values'][-10:] if x is not None]
+			recent_kl = [x for x in metrics['kl_divergences'][-10:] if x is not None]
 
 			avg_recent_reward = float(np.mean(recent_rewards)) if recent_rewards else 0.0
 			avg_recent_len = float(np.mean(recent_lengths)) if recent_lengths else 0.0
@@ -217,8 +226,10 @@ def run_training(
 				f'{elapsed:.1f}s\t{ep+1}\t'
 				f'Q-Value: {_fmt(_mean_or_none(recent_q), 4)} | '
 				f'Entropy: {_fmt(_mean_or_none(recent_entropy), 4)} | '
+				f'KL: {_fmt(_mean_or_none(recent_kl), 6)} | '
 				f'Alpha1: {_fmt(_mean_or_none(recent_alpha1), 4)} | '
-				f'Alpha2: {_fmt(_mean_or_none(recent_alpha2), 4)}'
+				f'Alpha2: {_fmt(_mean_or_none(recent_alpha2), 4)} | '
+				f'AlphaKL: {alpha_kl:.4f}'
 			)
 			print(f'{elapsed:.1f}s\t{ep+1}\tBuffer Size: {len(replay_buffer)} | Total Steps: {total_steps}')
 		if (ep + 1) % save_every == 0:
@@ -266,6 +277,8 @@ if __name__ == '__main__':
 	parser.add_argument('--simple', action='store_true', help='Use simple obs/state: obs=[x,y,dir], state=concat of all agent obs.')
 	parser.add_argument('--info_coef', type=float, default=0.0, help='Set CMASAC.scaled_information_gain_coef (e.g. --info_coef 0).')
 	parser.add_argument('--entropy_coef', type=float, default=0.0, help='Set CMASAC.scaled_entropy_coef (e.g. --entropy_coef 0).')
+	parser.add_argument('--alpha_kl', type=float, default=0.1, help='KL regularization coefficient for actor updates.')
+	parser.add_argument('--policy_update_steps', type=int, default=3, help='Number of actor updates per sampled batch using a fixed old policy snapshot.')
 	args = parser.parse_args()
 
 	obs_mode = 'simple' if args.simple else 'full'
@@ -281,5 +294,7 @@ if __name__ == '__main__':
 		plot_every=10,
 		record_video=True,
 		scaled_information_gain_coef=args.info_coef,
-		scaled_entropy_coef=args.entropy_coef
+		scaled_entropy_coef=args.entropy_coef,
+		alpha_kl=args.alpha_kl,
+		policy_update_steps=args.policy_update_steps,
 	)

@@ -86,6 +86,7 @@ def fgsm_attack(model: nn.Module, x: torch.Tensor, y: torch.Tensor, eps: float) 
 
 
 class EnsembleRegressor:
+
     def __init__(self, M: int, in_dim: int, out_dim: int = 1, hidden: int = 128, nlayers: int = 2, 
                  device: Optional[torch.device] = None, use_random_prior: bool = True, base_seed: int = 42):
         self.M = M
@@ -189,12 +190,27 @@ class EnsembleRegressor:
     def setup_optimizers(self, lr: float = 1e-3, weight_decay: float = 1e-5):
         self.optimizers = [optim.Adam(m.parameters(), lr=lr, weight_decay=weight_decay) for m in self.models]
 
-    def train_batch(self, xb: torch.Tensor, yb: torch.Tensor, eps_adv: float = 0.0) -> float:
+    def train_batch(
+        self,
+        xb: torch.Tensor,
+        yb: torch.Tensor,
+        eps_adv: float = 0.0,
+        y_mean: Optional[torch.Tensor] = None,
+        y_std: Optional[torch.Tensor] = None,
+        normalize_for_loss: bool = False,
+    ) -> float:
         if self.optimizers is None:
             raise RuntimeError("Optimizers not initialized. Call setup_optimizers() first.")
 
         xb = xb.to(self.device)
         yb = yb.to(self.device).float()
+
+        if normalize_for_loss:
+            if y_mean is None or y_std is None:
+                raise ValueError("y_mean and y_std must be provided when normalize_for_loss=True")
+            y_mean = y_mean.to(self.device).float()
+            y_std = y_std.to(self.device).float()
+            norm_denom = torch.clamp(y_std, min=1e-8)
 
         total_loss = 0.0
         batch_size = xb.shape[0]
@@ -209,12 +225,25 @@ class EnsembleRegressor:
             yb_model = yb[indices]
 
             mu, var = m(xb_model)
-            loss = gaussian_nll(mu, var, yb_model).mean()
+            if normalize_for_loss:
+                yb_model_norm = (yb_model - y_mean) / norm_denom
+                mu_norm = (mu - y_mean) / norm_denom
+                var_norm = var / (norm_denom ** 2)
+                var_norm = torch.clamp(var_norm, min=1e-8)
+                loss = gaussian_nll(mu_norm, var_norm, yb_model_norm).mean()
+            else:
+                loss = gaussian_nll(mu, var, yb_model).mean()
 
             if eps_adv > 0.0:
                 xb_adv = fgsm_attack(m, xb_model, yb_model, eps_adv)
                 mu2, var2 = m(xb_adv)
-                loss = loss + gaussian_nll(mu2, var2, yb_model).mean()
+                if normalize_for_loss:
+                    mu2_norm = (mu2 - y_mean) / norm_denom
+                    var2_norm = var2 / (norm_denom ** 2)
+                    var2_norm = torch.clamp(var2_norm, min=1e-8)
+                    loss = loss + gaussian_nll(mu2_norm, var2_norm, yb_model_norm).mean()
+                else:
+                    loss = loss + gaussian_nll(mu2, var2, yb_model).mean()
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
