@@ -15,8 +15,9 @@ import matplotlib.pyplot as plt
 
 from bayesian.Bayesian_sampling import EnsembleRegressor
 
-scaled_information_gain_coef = 0
-scaled_entropy_coef = 0
+scaled_information_gain_coef = 0.01
+scaled_entropy_coef = 0.01
+scaled_KL_coef = 1
 eps = 1e-8
 
 class ReplayBuffer:
@@ -179,12 +180,14 @@ class Normalizer:
 
 class SAC_REINFORCE:
 	def __init__(self, obs_shape, state_shape, action_dim, num_agents=2, hidden_dim=128, lr=3e-4, gamma=0.99,
-				 tau=0.01, alpha1=0.01, alpha2=0.01, auto_entropy_tuning=False):
+				 tau=0.01, alpha1=0.01, alpha2=0.01, alpha_kl=0.1, policy_update_steps=3, auto_entropy_tuning=False):
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		self.gamma = gamma
 		self.tau = tau
 		self.n_actions = action_dim
 		self.num_agents = num_agents
+		self.alpha_kl = float(alpha_kl)
+		self.policy_update_steps = max(1, int(policy_update_steps))
 		self.obs_is_image = len(obs_shape) == 3
 		self.state_is_image = len(state_shape) == 3
 
@@ -265,7 +268,8 @@ class SAC_REINFORCE:
 			baseline = (action_probs * q_stack).sum(dim=1)
 		return baseline
 	
-	def information_bonus(self, states, actions_oh):
+	@torch.no_grad()
+	def information_bonus_raw(self, states, actions_oh):
 		states_flat = states.reshape(states.size(0), -1)
 		actions_oh_flat = actions_oh.reshape(actions_oh.shape[0], -1)
 
@@ -273,10 +277,12 @@ class SAC_REINFORCE:
 		ensemble_input_norm = self.input_normalizer.normalize(ensemble_input)
 		
 		mean_ens, var_total, std_total, std_ale, std_epi = self.ensemble_regressor.mixture_mean_var(ensemble_input_norm, return_decomposed=True)
-		info_gain = torch.sum(torch.log((eps ** 2) + (std_epi ** 2)), dim=-1, keepdim=True)	
-		info_gain = self.information_bonus_normalizer.normalize(info_gain)
-		
+		info_gain = torch.sum(torch.log((eps ** 2) + (std_epi ** 2)), dim=-1, keepdim=True)
 		return info_gain
+
+	def information_bonus(self, states, actions_oh):
+		info_gain = self.information_bonus_raw(states, actions_oh)
+		return self.information_bonus_normalizer.normalize(info_gain)
 
 	def train_ensemble_model(self, state, actions_oh, next_state):
 		states_flat = state.reshape(state.size(0), -1)
@@ -285,10 +291,17 @@ class SAC_REINFORCE:
 		
 		ensemble_input = torch.cat([states_flat, actions_oh_flat], dim=-1)
 		ensemble_input_norm = self.input_normalizer.normalize(ensemble_input)
-
-		next_state_norm = self.output_normalizer.normalize(next_state_flat)
+		with torch.no_grad():
+			y_mean = self.output_normalizer.mean.detach()
+			y_std = torch.sqrt(self.output_normalizer.var.detach() + eps)
 		
-		self.ensemble_regressor.train_batch(ensemble_input_norm, next_state_norm)
+		self.ensemble_regressor.train_batch(
+			ensemble_input_norm,
+			next_state_flat,
+			y_mean=y_mean,
+			y_std=y_std,
+			normalize_for_loss=True,
+		)
 		
 	def update_sac(self, replay_buffer, batch_size=64):
 		if len(replay_buffer) < batch_size:
@@ -321,12 +334,11 @@ class SAC_REINFORCE:
 			actions_oh_flat = actions_oh.reshape(actions_oh.shape[0], -1)
 			next_state_flat = next_state.reshape(next_state.size(0), -1)
 			ensemble_input = torch.cat([states_flat, actions_oh_flat], dim=-1)
+			info_bonus_raw = self.information_bonus_raw(state, actions_oh)
 			
+			self.information_bonus_normalizer.update(info_bonus_raw)
 			self.input_normalizer.update(ensemble_input)
 			self.output_normalizer.update(next_state_flat)
-
-			info_bonus = self.information_bonus(state, actions_oh) 
-			self.information_bonus_normalizer.update(info_bonus)
 
 		t3 = time.time()
 		# Update critic
@@ -367,36 +379,60 @@ class SAC_REINFORCE:
 			actions_oh = F.one_hot(action.long(), num_classes=self.n_actions).float()
 			q1, q2 = self.critic(state, actions_oh)
 			q_values = torch.min(q1, q2).squeeze(-1)
-		total_policy_loss = 0.0
+			old_policy_probs = []
+			for a_i, actor in enumerate(self.actors):
+				obs_a_i = obs[:, a_i]
+				probs_i = actor(obs_a_i).clamp_min(eps)
+				probs_i = probs_i / probs_i.sum(dim=-1, keepdim=True)
+				old_policy_probs.append(probs_i)
+		info_bonus = self.information_bonus(state, actions_oh)
+		scaled_info_bonus = scaled_information_gain_coef * info_bonus.squeeze(-1)
+		alpha1 = self.alpha1.detach() if isinstance(self.alpha1, torch.Tensor) else self.alpha1
+		alpha2 = self.alpha2.detach() if isinstance(self.alpha2, torch.Tensor) else self.alpha2
+		actor_loss_value = 0.0
 		total_entropy = 0.0
 		total_advantage = 0.0
 		total_info_gain = 0.0
-		for a_i, actor in enumerate(self.actors):
-			obs_a_i = obs[:, a_i]
-			actions_a = action[:, a_i]
-			baseline = self.compute_counterfactual_baseline(obs_a_i, state, action, a_i)
-			advantages = (q_values - baseline).detach()
-			if len(advantages) > 1:
-				advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-			action_probs = actor(obs_a_i)
-			dist = Categorical(action_probs)
-			new_log_probs = dist.log_prob(actions_a)
-			entropy = dist.entropy().mean()
-			alpha1 = self.alpha1.detach() if isinstance(self.alpha1, torch.Tensor) else self.alpha1
-			alpha2 = self.alpha2.detach() if isinstance(self.alpha2, torch.Tensor) else self.alpha2
+		total_kl_divergence = 0.0
+		for _ in range(self.policy_update_steps):
+			total_policy_loss = 0.0
+			for a_i, actor in enumerate(self.actors):
+				obs_a_i = obs[:, a_i]
+				actions_a = action[:, a_i]
+				baseline = self.compute_counterfactual_baseline(obs_a_i, state, action, a_i)
+				advantages = (q_values - baseline).detach()
+				if len(advantages) > 1:
+					advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+				action_probs = actor(obs_a_i)
+				dist = Categorical(action_probs)
+				new_log_probs = dist.log_prob(actions_a)
+				old_log_probs = torch.log(
+					old_policy_probs[a_i].gather(1, actions_a.unsqueeze(1)).clamp_min(eps)
+				).squeeze(1)
+				entropy = dist.entropy().mean()
+				kl_divergence = (
+					action_probs * (
+						torch.log(action_probs.clamp_min(eps)) - torch.log(old_policy_probs[a_i])
+					)
+				).sum(dim=-1).mean()
 
-			info_bonus = self.information_bonus(state, actions_oh)
-			scaled_info_bonus = scaled_information_gain_coef * info_bonus
-			policy_loss_a = (((alpha1 * scaled_entropy_coef * (new_log_probs + 1) - advantages - alpha2 * scaled_info_bonus).detach() * new_log_probs).mean())
+				policy_loss_a = (((
+					alpha1 * scaled_entropy_coef * (new_log_probs + 1)
+					+ self.alpha_kl * (new_log_probs + 1 - old_log_probs)
+					- advantages
+					- alpha2 * scaled_info_bonus
+				).detach() * new_log_probs).mean())
 
-			total_policy_loss += policy_loss_a
-			total_entropy += entropy.item()
-			total_advantage += advantages.mean().item()
-			total_info_gain += info_bonus.mean().item()
-		self.actor_optimizer.zero_grad()
-		total_policy_loss.backward()
-		torch.nn.utils.clip_grad_norm_([p for a in self.actors for p in a.parameters()], 1.0)
-		self.actor_optimizer.step()
+				total_policy_loss += policy_loss_a
+				total_entropy += entropy.item()
+				total_advantage += advantages.mean().item()
+				total_info_gain += info_bonus.mean().item()
+				total_kl_divergence += kl_divergence.item()
+			self.actor_optimizer.zero_grad()
+			total_policy_loss.backward()
+			torch.nn.utils.clip_grad_norm_([p for a in self.actors for p in a.parameters()], 1.0)
+			self.actor_optimizer.step()
+			actor_loss_value += total_policy_loss.item()
 		rewards_arr = np.array(reward.cpu().numpy())
 
 		t5 = time.time()
@@ -441,10 +477,10 @@ class SAC_REINFORCE:
 			sampled_actions_target_cat = torch.cat(sampled_actions_target, dim=1)
 			sampled_actions_target_oh = F.one_hot(sampled_actions_target_cat.long(), num_classes=self.n_actions).float()
 
-			info_bonus_target = self.information_bonus(state, sampled_actions_target_oh)
-			info_bonus = self.information_bonus(state, sampled_actions_oh)
+			info_bonus_target_raw = self.information_bonus_raw(state, sampled_actions_target_oh)
+			info_bonus_raw = self.information_bonus_raw(state, sampled_actions_oh)
 
-			alpha2_loss = (self.log_alpha2.exp() * (info_bonus - info_bonus_target).detach()).mean()
+			alpha2_loss = (self.log_alpha2.exp() * (info_bonus_raw - info_bonus_target_raw).detach()).mean()
 			self.alpha2_optimizer.zero_grad()
 			alpha2_loss.backward()
 			self.alpha2_optimizer.step()
@@ -473,12 +509,14 @@ class SAC_REINFORCE:
 		except Exception:
 			avg_return = float(rewards_arr)
 		policy_return = {
-			'policy_loss': total_policy_loss.item(),
-			'entropy': total_entropy / float(self.num_agents),
+			'policy_loss': actor_loss_value / float(self.policy_update_steps),
+			'entropy': total_entropy / float(self.num_agents * self.policy_update_steps),
 			'avg_return': avg_return,
-			'avg_advantage': total_advantage / float(self.num_agents),
+			'avg_advantage': total_advantage / float(self.num_agents * self.policy_update_steps),
 			'avg_q_value': q_values.mean().item(),
-			'information_gain': total_info_gain / float(self.num_agents)
+			'information_gain': total_info_gain / float(self.num_agents * self.policy_update_steps),
+			'kl_divergence': total_kl_divergence / float(self.num_agents * self.policy_update_steps),
+			'alpha_kl': self.alpha_kl,
 		}
 		result = {
 			'critic_loss': critic_loss.item(),
