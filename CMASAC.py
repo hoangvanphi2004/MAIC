@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 
 from bayesian.Bayesian_sampling import EnsembleRegressor
 
-scaled_information_gain_coef = 0.01
-scaled_entropy_coef = 0.01
+scaled_information_gain_coef = 1
+scaled_entropy_coef = 1
 scaled_KL_coef = 1
 eps = 1e-8
 
@@ -180,13 +180,14 @@ class Normalizer:
 
 class SAC_REINFORCE:
 	def __init__(self, obs_shape, state_shape, action_dim, num_agents=2, hidden_dim=128, lr=3e-4, gamma=0.99,
-				 tau=0.01, alpha1=0.01, alpha2=0.01, alpha_kl=0.1, policy_update_steps=3, auto_entropy_tuning=False):
+				 tau=0.01, alpha1=0.01, alpha2=0.01, alpha_kl=0.1, alpha_min=1e-4, policy_update_steps=3, auto_entropy_tuning=False):
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		self.gamma = gamma
 		self.tau = tau
 		self.n_actions = action_dim
 		self.num_agents = num_agents
 		self.alpha_kl = float(alpha_kl)
+		self.alpha_min = float(alpha_min)
 		self.policy_update_steps = max(1, int(policy_update_steps))
 		self.obs_is_image = len(obs_shape) == 3
 		self.state_is_image = len(state_shape) == 3
@@ -417,8 +418,8 @@ class SAC_REINFORCE:
 				).sum(dim=-1).mean()
 
 				policy_loss_a = (((
-					alpha1 * scaled_entropy_coef * (new_log_probs + 1)
-					+ self.alpha_kl * (new_log_probs + 1 - old_log_probs)
+					(alpha1 * scaled_entropy_coef + self.alpha_kl) * (new_log_probs + 1)
+					- self.alpha_kl * old_log_probs
 					- advantages
 					- alpha2 * scaled_info_bonus
 				).detach() * new_log_probs).mean())
@@ -461,6 +462,7 @@ class SAC_REINFORCE:
 			self.alpha1_optimizer.zero_grad()
 			alpha1_loss.backward()
 			self.alpha1_optimizer.step()
+			self.log_alpha1 = max(self.log_alpha1, torch.log(torch.tensor(self.alpha_min)))
 			self.alpha1 = self.log_alpha1.exp()
 
 			# Update alpha2
