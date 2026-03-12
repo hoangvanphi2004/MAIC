@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 
 from bayesian.Bayesian_sampling import EnsembleRegressor
 
-scaled_information_gain_coef = 0.01
-scaled_entropy_coef = 0.01
+scaled_information_gain_coef = 1
+scaled_entropy_coef = 1
 scaled_KL_coef = 1
 eps = 1e-8
 
@@ -418,8 +418,8 @@ class SAC_REINFORCE:
 				).sum(dim=-1).mean()
 
 				policy_loss_a = (((
-					alpha1 * scaled_entropy_coef * (new_log_probs + 1)
-					+ self.alpha_kl * (new_log_probs + 1 - old_log_probs)
+					(alpha1 * scaled_entropy_coef + self.alpha_kl) * (new_log_probs + 1)
+					- self.alpha_kl * old_log_probs
 					- advantages
 					- alpha2 * scaled_info_bonus
 				).detach() * new_log_probs).mean())
@@ -462,7 +462,7 @@ class SAC_REINFORCE:
 			self.alpha1_optimizer.zero_grad()
 			alpha1_loss.backward()
 			self.alpha1_optimizer.step()
-			self.log_alpha1 = torch.max(self.log_alpha1, torch.log(torch.tensor(self.alpha_min, device=self.device)))
+			self.log_alpha1 = max(self.log_alpha1, torch.log(torch.tensor(self.alpha_min)))
 			self.alpha1 = self.log_alpha1.exp()
 
 			# Update alpha2
