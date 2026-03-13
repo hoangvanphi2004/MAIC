@@ -1,4 +1,5 @@
 import warnings
+import json
 import numpy as np
 
 try:
@@ -25,6 +26,33 @@ def save_plots(metrics, run_path, ep):
 		ep: Episode number for filename
 	"""
 	try:
+		# Save a JSON snapshot every time plotting is triggered.
+		json_out = run_path / 'metrics_latest.json'
+		metrics_json = {}
+		for key, values in metrics.items():
+			if isinstance(values, np.ndarray):
+				values = values.tolist()
+			if isinstance(values, list):
+				cleaned = []
+				for v in values:
+					if isinstance(v, (np.floating, np.integer)):
+						cleaned.append(v.item())
+					elif isinstance(v, np.ndarray):
+						cleaned.append(v.tolist())
+					else:
+						cleaned.append(v)
+				metrics_json[key] = cleaned
+			else:
+				if isinstance(values, (np.floating, np.integer)):
+					metrics_json[key] = values.item()
+				elif isinstance(values, np.ndarray):
+					metrics_json[key] = values.tolist()
+				else:
+					metrics_json[key] = values
+		metrics_json['plot_episode'] = int(ep)
+		with open(json_out, 'w', encoding='utf-8') as f:
+			json.dump(metrics_json, f, indent=2)
+
 		if plt is None:
 			warnings.warn('matplotlib not available; skipping plots')
 			return
