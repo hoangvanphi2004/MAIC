@@ -41,7 +41,7 @@ class PushBoxEnv(MultiGridEnv):
         size: int = 12,
         num_agents: int = 2,
         max_steps: int | None = None,
-        team_reward: float = 1.0,
+        team_reward: float = 100.0,
         only_turn_and_forward: bool = False,
         **kwargs,
     ):
@@ -251,7 +251,12 @@ class PushBoxEnv(MultiGridEnv):
         # Success: box reaches any wall-adjacent interior line.
         if not self._box_reached_wall and self._box_touches_wall():
             self._box_reached_wall = True
-            for i in range(self.num_agents):
+            # Reward only agents that directly completed the successful push.
+            if successful_pushers:
+                reward_receivers = successful_pushers
+            else:
+                reward_receivers = set()
+            for i in reward_receivers:
                 rewards[i] += self.team_reward
             self.agent_states.terminated = True
 

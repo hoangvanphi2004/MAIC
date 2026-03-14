@@ -16,6 +16,7 @@ def run_training(
 	env_id='MultiGrid-MultiTargetEmpty-16x16-v0',
 	num_agents=2,
 	obs_state_mode='simple',
+	model_config=None,
 	episodes=5000,
 	steps_per_episode=40,
 	replay_size=int(1e6),
@@ -32,13 +33,25 @@ def run_training(
 	metrics_save_every=10,
 	scaled_information_gain_coef=0.0,
 	scaled_entropy_coef=0.0,
-	alpha_kl=0.1,
-	policy_update_steps=3,
 ):
 	SAC_REINFORCE.scaled_information_gain_coef = float(scaled_information_gain_coef)
 	SAC_REINFORCE.scaled_entropy_coef = float(scaled_entropy_coef)
 	print('scaled_information_gain_coef:', SAC_REINFORCE.scaled_information_gain_coef)
 	print('scaled_entropy_coef:', SAC_REINFORCE.scaled_entropy_coef)
+
+	resolved_model_config = {
+		'hidden_dim': 128,
+		'lr': 3e-4,
+		'gamma': 0.99,
+		'tau': 0.02,
+		'alpha1': 0.02,
+		'alpha2': 0.02,
+		'alpha_kl': 0.1,
+		'policy_update_steps': 3,
+		'auto_entropy_tuning': True,
+	}
+	if model_config is not None:
+		resolved_model_config.update(model_config)
 
 	run_path = Path(model_dir)
 	run_path.mkdir(parents=True, exist_ok=True)
@@ -103,15 +116,15 @@ def run_training(
 		state_shape,
 		action_dim,
 		num_agents=num_agents,
-		hidden_dim=128,
-		lr=3e-4,
-		gamma=0.99,
-		tau=0.02,
-		alpha1=0.02,
-		alpha2=0.02,
-		alpha_kl=alpha_kl,
-		policy_update_steps=policy_update_steps,
-		auto_entropy_tuning=True,
+		hidden_dim=resolved_model_config['hidden_dim'],
+		lr=resolved_model_config['lr'],
+		gamma=resolved_model_config['gamma'],
+		tau=resolved_model_config['tau'],
+		alpha1=resolved_model_config['alpha1'],
+		alpha2=resolved_model_config['alpha2'],
+		alpha_kl=resolved_model_config['alpha_kl'],
+		policy_update_steps=resolved_model_config['policy_update_steps'],
+		auto_entropy_tuning=resolved_model_config['auto_entropy_tuning'],
 	)
 	replay_buffer = ReplayBuffer(capacity=replay_size)
 	total_steps = 0
@@ -165,7 +178,7 @@ def run_training(
 		metrics.append_episode(ep_reward, ep_len, ep_sac_stats, unique_states_seen=len(seen_state_signatures))
 		if (ep + 1) % 10 == 0:
 			elapsed = time.time() - start_time
-			metrics.print_episode_metrics(ep, ep_reward, ep_len, elapsed, alpha_kl, len(replay_buffer), total_steps)
+			metrics.print_episode_metrics(ep, ep_reward, ep_len, elapsed, resolved_model_config['alpha_kl'], len(replay_buffer), total_steps)
 		if (ep + 1) % save_every == 0:
 			model_path = run_path / f'model_ep{ep+1}.pth'
 			agent.save(str(model_path))

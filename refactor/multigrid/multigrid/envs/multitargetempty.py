@@ -142,7 +142,7 @@ class MultiTargetEmptyEnv(MultiGridEnv):
         agent_start_pos: tuple[int, int] | None = None,
         agent_start_dir: Direction | None = None,
         max_steps: int | None = None,
-        individual_reward: float = 40.0,
+        individual_reward: float = 50.0,
         team_bonus_reward: float = 5.0,
         step_penalty: float = 0.1,
         only_turn_and_forward: bool = False,
