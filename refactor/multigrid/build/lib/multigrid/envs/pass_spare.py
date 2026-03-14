@@ -61,6 +61,7 @@ class PassSparseEnv(MultiGridEnv):
         self.door_pos = None
         self.door_obj: Door | None = None
         self._door_open_cached = False  # cache to avoid redundant grid updates
+        self._right_room_rewarded = np.zeros(num_agents, dtype=bool)
 
         super().__init__(
             mission_space=(
@@ -117,6 +118,7 @@ class PassSparseEnv(MultiGridEnv):
             px, py = start_positions[i % len(start_positions)]
             agent.state.pos = (px, py)
             agent.state.dir = 0  # facing right
+        self._right_room_rewarded[:] = False
 
     def _update_door_state(self):
         # Door open if ANY agent stands on either switch
@@ -178,10 +180,15 @@ class PassSparseEnv(MultiGridEnv):
         # After all moves, update door state based on switch occupancy
         self._update_door_state()
 
+        # Reward each agent the first time it reaches the right room.
+        for i, pos in enumerate(self.agent_states.pos):
+            if pos[0] > self.split_x and not self._right_room_rewarded[i]:
+                for j in range(self.num_agents):
+                    rewards[j] += self.team_reward
+                self._right_room_rewarded[i] = True
+
         # Success condition: both agents in right room
         if self._both_in_right_room():
-            for i in range(self.num_agents):
-                rewards[i] += self.team_reward
             # terminate all agents
             self.agent_states.terminated = True
 

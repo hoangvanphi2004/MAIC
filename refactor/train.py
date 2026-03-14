@@ -55,15 +55,34 @@ def run_training(
 			state_out = np.array(info_dict['state'], dtype=np.float32)
 			return obs_out, state_out
 
-		# simple mode: each agent obs = [x, y, direction], state = concat of all agents obs
+		# simple mode: compact per-agent features + key env-level flags
 		agent_states = env.unwrapped.agent_states
 		obs_simple = []
 		for i in range(num_agents):
 			x, y = agent_states.pos[i]
 			direction = agent_states.dir[i]
-			obs_simple.append(np.array([x, y, direction], dtype=np.float32))
+			carrying_flag = 1.0 if env.unwrapped.agents[i].state.carrying is not None else 0.0
+			obs_simple.append(np.array([x, y, direction, carrying_flag], dtype=np.float32))
 		obs_out = np.stack(obs_simple, axis=0)
-		state_out = obs_out.reshape(-1).astype(np.float32)
+
+		env_features = []
+		env_unwrapped = env.unwrapped
+
+		# Door-centric features (important for PassSparse / door-based tasks)
+		door_obj = getattr(env_unwrapped, 'door_obj', None)
+		if door_obj is not None:
+			env_features.append(1.0 if bool(getattr(door_obj, 'is_open', False)) else 0.0)
+
+		# PushBox-centric feature (if the env exposes the moving box center)
+		box_center = getattr(env_unwrapped, 'box_center', None)
+		if box_center is not None:
+			env_features.extend([float(box_center[0]), float(box_center[1])])
+
+		flat_obs = obs_out.reshape(-1).astype(np.float32)
+		if env_features:
+			state_out = np.concatenate([flat_obs, np.array(env_features, dtype=np.float32)], axis=0)
+		else:
+			state_out = flat_obs
 		return obs_out, state_out
 
 	def _state_signature(state_arr):
