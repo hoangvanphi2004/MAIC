@@ -1,36 +1,33 @@
 
 import argparse
+import json
+from pathlib import Path
 import torch
 from train import run_training
 
 
+def load_train_config(config_path: str) -> dict:
+	path = Path(config_path)
+	if not path.is_absolute():
+		path = Path(__file__).resolve().parent / path
+
+	if not path.is_file():
+		raise FileNotFoundError(f'Config file not found: {path}')
+
+	with path.open('r', encoding='utf-8') as f:
+		cfg = json.load(f)
+
+	if not isinstance(cfg, dict):
+		raise ValueError(f'Config file must be a JSON object: {path}')
+
+	return cfg
+
+
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Train CMASAC with configurable observation mode and information bonus coefficient.')
-	parser.add_argument('--env', type=str, default='MultiGrid-MultiTargetEmpty-16x16-v0', help='Gym environment id (e.g. MultiGrid-PassSparse-8x8-v0).')
-	parser.add_argument('--num_agents', type=int, default=2, help='Number of agents to pass to the environment constructor.')
-	parser.add_argument('--simple', action='store_true', help='Use simple obs/state: obs=[x,y,dir], state=concat of all agent obs.')
-	parser.add_argument('--info_coef', type=float, default=0.0, help='Set CMASAC.scaled_information_gain_coef (e.g. --info_coef 0).')
-	parser.add_argument('--entropy_coef', type=float, default=0.0, help='Set CMASAC.scaled_entropy_coef (e.g. --entropy_coef 0).')
-	parser.add_argument('--alpha_kl', type=float, default=1.0, help='KL regularization coefficient for actor updates.')
-	parser.add_argument('--policy_update_steps', type=int, default=3, help='Number of actor updates per sampled batch using a fixed old policy snapshot.')
+	parser.add_argument('--config', type=str, default='train_config.json', help='Path to single JSON config containing all training settings.')
 	args = parser.parse_args()
 
-	obs_mode = 'simple' if args.simple else 'full'
+	train_cfg = load_train_config(args.config)
 
-	run_training(
-		env_id=args.env,
-		num_agents=args.num_agents,
-		obs_state_mode=obs_mode,
-		episodes=5000,
-		steps_per_episode=40,
-		batch_size=1024,
-		updates_num=1,
-		save_every=100,
-		video_every=100,
-		plot_every=10,
-		record_video=True,
-		scaled_information_gain_coef=args.info_coef,
-		scaled_entropy_coef=args.entropy_coef,
-		alpha_kl=args.alpha_kl,
-		policy_update_steps=args.policy_update_steps,
-	)
+	run_training(**train_cfg)

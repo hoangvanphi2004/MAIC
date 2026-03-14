@@ -46,7 +46,7 @@ class PassSparseEnv(MultiGridEnv):
         size: int = 30,
         num_agents: int = 2,
         max_steps: int | None = None,
-        team_reward: float = 100,
+        team_reward: float = 50,
         only_turn_and_forward: bool = False,
         **kwargs,
     ):
