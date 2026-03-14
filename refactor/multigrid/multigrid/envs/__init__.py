@@ -35,6 +35,7 @@ from .locked_hallway import LockedHallwayEnv
 from .multitargetempty import MultiTargetEmptyEnv
 from .pass_spare import PassSparseEnv
 from .playground import PlaygroundEnv
+from .push_box import PushBoxEnv
 from .redbluedoors import RedBlueDoorsEnv
 
 CONFIGURATIONS = {
@@ -62,6 +63,9 @@ CONFIGURATIONS = {
     'MultiGrid-RedBlueDoors-6x6-v0': (RedBlueDoorsEnv, {'size': 6}),
     'MultiGrid-RedBlueDoors-8x8-v0': (RedBlueDoorsEnv, {'size': 8}),
     'MultiGrid-PassSparse-8x8-v0': (PassSparseEnv, {'size': 8, 'num_agents': 2}),
+    'MultiGrid-PushBox-12x12-v0': (PushBoxEnv, {'size': 12, 'num_agents': 2}),
+    'MultiGrid-PushBox-7x7-v0': (PushBoxEnv, {'size': 7, 'num_agents': 2}),
+    'MultiGrid-PushBox-9x9-v0': (PushBoxEnv, {'size': 9, 'num_agents': 2}),
 }
 
 # Register environments with gymnasium
