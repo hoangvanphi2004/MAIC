@@ -49,6 +49,7 @@ def run_training(
 		'alpha_kl': 0.1,
 		'policy_update_steps': 3,
 		'auto_entropy_tuning': True,
+		'target_entropy_scale': 0.2,
 	}
 	if model_config is not None:
 		resolved_model_config.update(model_config)
@@ -125,6 +126,7 @@ def run_training(
 		alpha_kl=resolved_model_config['alpha_kl'],
 		policy_update_steps=resolved_model_config['policy_update_steps'],
 		auto_entropy_tuning=resolved_model_config['auto_entropy_tuning'],
+		target_entropy_scale=resolved_model_config['target_entropy_scale'],
 	)
 	replay_buffer = ReplayBuffer(capacity=replay_size)
 	total_steps = 0

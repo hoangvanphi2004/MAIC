@@ -18,7 +18,8 @@ class SAC_REINFORCE:
 	scaled_entropy_coef = 0.0
 
 	def __init__(self, obs_shape, state_shape, action_dim, num_agents=2, hidden_dim=128, lr=3e-4, gamma=0.99,
-				 tau=0.01, alpha1=0.01, alpha2=0.01, alpha_kl=0.1, alpha_min=1e-4, policy_update_steps=3, auto_entropy_tuning=False):
+				 tau=0.01, alpha1=0.01, alpha2=0.01, alpha_kl=0.1, alpha_min=1e-4, policy_update_steps=3,
+				 auto_entropy_tuning=False, target_entropy_scale=0.2):
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		self.gamma = gamma
 		self.tau = tau
@@ -27,6 +28,7 @@ class SAC_REINFORCE:
 		self.alpha_kl = float(alpha_kl)
 		self.alpha_min = float(alpha_min)
 		self.policy_update_steps = max(1, int(policy_update_steps))
+		self.target_entropy_scale = float(target_entropy_scale)
 		self.obs_is_image = len(obs_shape) == 3
 		self.state_is_image = len(state_shape) == 3
 
@@ -47,7 +49,7 @@ class SAC_REINFORCE:
 		
 		self.auto_entropy_tuning = auto_entropy_tuning
 		if self.auto_entropy_tuning:
-			self.target_entropy = float(self.num_agents * action_dim) * 0.2
+			self.target_entropy = float(self.num_agents * action_dim) * self.target_entropy_scale
 			self.log_alpha1 = torch.tensor([alpha1], requires_grad=True, device=self.device)
 			self.alpha1_optimizer = optim.Adam([self.log_alpha1], lr=lr)
 			self.alpha1 = self.log_alpha1.exp()
