@@ -251,13 +251,11 @@ class PushBoxEnv(MultiGridEnv):
         # Success: box reaches any wall-adjacent interior line.
         if not self._box_reached_wall and self._box_touches_wall():
             self._box_reached_wall = True
-            # Reward only agents that directly completed the successful push.
-            if successful_pushers:
-                reward_receivers = successful_pushers
-            else:
-                reward_receivers = set()
+            # Cooperative success: split team reward equally among all agents.
+            reward_receivers = set(range(self.num_agents))
+            per_agent_reward = self.team_reward / max(1, self.num_agents)
             for i in reward_receivers:
-                rewards[i] += self.team_reward
+                rewards[i] += per_agent_reward
             self.agent_states.terminated = True
 
         return rewards
