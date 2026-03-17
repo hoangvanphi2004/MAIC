@@ -7,6 +7,7 @@ import multigrid.envs
 import imageio
 
 from algorithms.MAIC import SAC_REINFORCE
+from algorithms.QMIX import QMIX
 from algorithms.buffer import ReplayBuffer
 from plot import save_plots
 from train_helpers import TrainingMetrics
@@ -15,6 +16,7 @@ from train_helpers import TrainingMetrics
 def run_training(
 	env_id='MultiGrid-MultiTargetEmpty-16x16-v0',
 	num_agents=2,
+	algorithm='cmasac',
 	obs_state_mode='simple',
 	model_config=None,
 	episodes=5000,
@@ -34,23 +36,39 @@ def run_training(
 	scaled_information_gain_coef=0.0,
 	scaled_entropy_coef=0.0,
 ):
-	SAC_REINFORCE.scaled_information_gain_coef = float(scaled_information_gain_coef)
-	SAC_REINFORCE.scaled_entropy_coef = float(scaled_entropy_coef)
-	print('scaled_information_gain_coef:', SAC_REINFORCE.scaled_information_gain_coef)
-	print('scaled_entropy_coef:', SAC_REINFORCE.scaled_entropy_coef)
+	algorithm = str(algorithm).lower()
+	if algorithm not in ('cmasac', 'qmix'):
+		raise ValueError(f"algorithm must be 'cmasac' or 'qmix', got: {algorithm}")
 
-	resolved_model_config = {
-		'hidden_dim': 128,
-		'lr': 3e-4,
-		'gamma': 0.99,
-		'tau': 0.02,
-		'alpha1': 0.02,
-		'alpha2': 0.02,
-		'alpha_kl': 0.1,
-		'policy_update_steps': 3,
-		'auto_entropy_tuning': True,
-		'target_entropy_scale': 0.2,
-	}
+	if algorithm == 'cmasac':
+		SAC_REINFORCE.scaled_information_gain_coef = float(scaled_information_gain_coef)
+		SAC_REINFORCE.scaled_entropy_coef = float(scaled_entropy_coef)
+		print('scaled_information_gain_coef:', SAC_REINFORCE.scaled_information_gain_coef)
+		print('scaled_entropy_coef:', SAC_REINFORCE.scaled_entropy_coef)
+		resolved_model_config = {
+			'hidden_dim': 128,
+			'lr': 3e-4,
+			'gamma': 0.99,
+			'tau': 0.02,
+			'alpha1': 0.02,
+			'alpha2': 0.02,
+			'alpha_kl': 0.1,
+			'policy_update_steps': 3,
+			'auto_entropy_tuning': True,
+			'target_entropy_scale': 0.2,
+		}
+	else:
+		resolved_model_config = {
+			'hidden_dim': 128,
+			'mixer_hidden_dim': 128,
+			'lr': 3e-4,
+			'gamma': 0.99,
+			'tau': 0.01,
+			'epsilon_start': 1.0,
+			'epsilon_end': 0.05,
+			'epsilon_decay_steps': 50000,
+			'grad_clip': 10.0,
+		}
 	if model_config is not None:
 		resolved_model_config.update(model_config)
 
@@ -111,23 +129,40 @@ def run_training(
 	obs_shape = obs0_arr.shape[1:]
 	state_shape = state0_arr.shape
 	action_dim = env.action_space[0].n
-	print('Env:', env_id, 'num_agents:', num_agents, 'mode:', obs_state_mode, 'obs_shape:', obs_shape, 'state_shape:', state_shape, 'action_dim:', action_dim)
-	agent = SAC_REINFORCE(
-		obs_shape,
-		state_shape,
-		action_dim,
-		num_agents=num_agents,
-		hidden_dim=resolved_model_config['hidden_dim'],
-		lr=resolved_model_config['lr'],
-		gamma=resolved_model_config['gamma'],
-		tau=resolved_model_config['tau'],
-		alpha1=resolved_model_config['alpha1'],
-		alpha2=resolved_model_config['alpha2'],
-		alpha_kl=resolved_model_config['alpha_kl'],
-		policy_update_steps=resolved_model_config['policy_update_steps'],
-		auto_entropy_tuning=resolved_model_config['auto_entropy_tuning'],
-		target_entropy_scale=resolved_model_config['target_entropy_scale'],
-	)
+	print('Env:', env_id, 'algorithm:', algorithm, 'num_agents:', num_agents, 'mode:', obs_state_mode, 'obs_shape:', obs_shape, 'state_shape:', state_shape, 'action_dim:', action_dim)
+	if algorithm == 'cmasac':
+		agent = SAC_REINFORCE(
+			obs_shape,
+			state_shape,
+			action_dim,
+			num_agents=num_agents,
+			hidden_dim=resolved_model_config['hidden_dim'],
+			lr=resolved_model_config['lr'],
+			gamma=resolved_model_config['gamma'],
+			tau=resolved_model_config['tau'],
+			alpha1=resolved_model_config['alpha1'],
+			alpha2=resolved_model_config['alpha2'],
+			alpha_kl=resolved_model_config['alpha_kl'],
+			policy_update_steps=resolved_model_config['policy_update_steps'],
+			auto_entropy_tuning=resolved_model_config['auto_entropy_tuning'],
+			target_entropy_scale=resolved_model_config['target_entropy_scale'],
+		)
+	else:
+		agent = QMIX(
+			obs_shape,
+			state_shape,
+			action_dim,
+			num_agents=num_agents,
+			hidden_dim=resolved_model_config['hidden_dim'],
+			mixer_hidden_dim=resolved_model_config['mixer_hidden_dim'],
+			lr=resolved_model_config['lr'],
+			gamma=resolved_model_config['gamma'],
+			tau=resolved_model_config['tau'],
+			epsilon_start=resolved_model_config['epsilon_start'],
+			epsilon_end=resolved_model_config['epsilon_end'],
+			epsilon_decay_steps=resolved_model_config['epsilon_decay_steps'],
+			grad_clip=resolved_model_config['grad_clip'],
+		)
 	replay_buffer = ReplayBuffer(capacity=replay_size)
 	total_steps = 0
 	metrics = TrainingMetrics()
@@ -152,7 +187,10 @@ def run_training(
 				actions = [env.action_space[i].sample() for i in range(num_agents)]
 				log_probs = [None] * num_agents
 			else:
-				actions, log_probs = agent.select_action(obs, evaluate=False)
+				if algorithm == 'qmix':
+					actions, log_probs = agent.select_action(obs, evaluate=False, total_steps=total_steps)
+				else:
+					actions, log_probs = agent.select_action(obs, evaluate=False)
 			input_actions = {i: int(actions[i]) for i in range(len(actions))}
 			next_obs_dict, rewards_dict, terminated, truncated, info = env.step(input_actions)
 			dones = np.array([terminated[i] or truncated[i] for i in terminated.keys()])
@@ -170,9 +208,12 @@ def run_training(
 			state = next_state
 			if len(replay_buffer) > batch_size and (total_steps + 1) % steps_per_update == 0:
 				for _ in range(updates_num):
-					sac_stats = agent.update_sac(replay_buffer, batch_size)
-					if sac_stats:
-						ep_sac_stats.append(sac_stats)
+					if algorithm == 'qmix':
+						train_stats = agent.update(replay_buffer, batch_size)
+					else:
+						train_stats = agent.update_sac(replay_buffer, batch_size)
+					if train_stats:
+						ep_sac_stats.append(train_stats)
 			ep_reward += shared_reward
 			ep_len = step + 1
 			if done:
@@ -180,7 +221,7 @@ def run_training(
 		metrics.append_episode(ep_reward, ep_len, ep_sac_stats, unique_states_seen=len(seen_state_signatures))
 		if (ep + 1) % 10 == 0:
 			elapsed = time.time() - start_time
-			metrics.print_episode_metrics(ep, ep_reward, ep_len, elapsed, resolved_model_config['alpha_kl'], len(replay_buffer), total_steps)
+			metrics.print_episode_metrics(ep, ep_reward, ep_len, elapsed, resolved_model_config.get('alpha_kl', 0.0), len(replay_buffer), total_steps)
 		if (ep + 1) % save_every == 0:
 			model_path = run_path / f'model_ep{ep+1}.pth'
 			agent.save(str(model_path))
