@@ -24,7 +24,7 @@ def load_train_config(config_path: str) -> dict:
 
 
 if __name__ == '__main__':
-	parser = argparse.ArgumentParser(description='Train CMASAC with configurable observation mode and information bonus coefficient.')
+	parser = argparse.ArgumentParser(description='Train multi-agent algorithms for MultiGrid with configurable observation/state extraction.')
 	parser.add_argument('--config', type=str, default='train_config.json', help='Path to single JSON config containing all training settings.')
 	args = parser.parse_args()
 

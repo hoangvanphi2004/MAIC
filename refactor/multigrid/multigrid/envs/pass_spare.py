@@ -198,3 +198,33 @@ class PassSparseEnv(MultiGridEnv):
 
         return rewards
 
+
+class PassSparseHardEnv(PassSparseEnv):
+    """
+    Hard variant of PassSparse.
+
+    Reward rule: +team_reward is given to EACH agent only when ALL agents
+    have crossed to the right room (no individual crossing rewards).
+    This is harder because a single agent crossing gives no signal until
+    the team is complete.
+    """
+
+    def handle_actions(self, actions):
+        # Delegate movement and door logic to parent; discard its rewards
+        parent_rewards = super().handle_actions(actions)
+
+        rewards = {i: 0.0 for i in range(self.num_agents)}
+
+        # Give team reward to every agent only at the moment the last agent
+        # crosses — detected by _right_room_rewarded going all-True.
+        if self._both_in_right_room() and not getattr(self, '_team_reward_given', False):
+            for i in range(self.num_agents):
+                rewards[i] = self.team_reward
+            self._team_reward_given = True
+
+        return rewards
+
+    def _gen_grid(self, width, height):
+        super()._gen_grid(width, height)
+        self._team_reward_given = False
+
