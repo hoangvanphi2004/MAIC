@@ -198,7 +198,6 @@ class PassSparseEnv(MultiGridEnv):
 
         return rewards
 
-
 class PassSparseHardEnv(PassSparseEnv):
     """
     Hard variant of PassSparse.
@@ -227,4 +226,3 @@ class PassSparseHardEnv(PassSparseEnv):
     def _gen_grid(self, width, height):
         super()._gen_grid(width, height)
         self._team_reward_given = False
-

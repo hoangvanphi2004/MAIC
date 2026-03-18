@@ -1,5 +1,4 @@
 {
-  "algorithm": "cmasac",
   "env_id": "MultiGrid-MultiTargetEmpty-16x16-v0",
   "num_agents": 2,
   "obs_state_mode": "simple",
@@ -17,16 +16,16 @@
   "video_every": 100,
   "plot_every": 10,
   "metrics_save_every": 10,
-  "scaled_information_gain_coef": 1,
-  "scaled_entropy_coef": 1,
+  "scaled_information_gain_coef": 0.0,
+  "scaled_entropy_coef": 0.0,
   "model_config": {
     "hidden_dim": 128,
     "lr": 0.0003,
     "gamma": 0.99,
     "tau": 0.02,
-    "alpha1": 1,
-    "alpha2": 1,
-    "alpha_kl": 0.1,
+    "alpha1": 0.02,
+    "alpha2": 0.02,
+    "alpha_kl": 1.0,
     "policy_update_steps": 3,
     "auto_entropy_tuning": true,
     "target_entropy_scale": 0.2
