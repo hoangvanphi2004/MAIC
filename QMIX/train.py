@@ -146,11 +146,6 @@ def run_training(
 
 			if done_for_episode:
 				break
-		
-		# Test Q value: truyền đúng shape (1, obs_dim)
-		test_input = np.asarray(obs_state, dtype=np.float32)  # shape: (num_agents, obs_dim)
-		q_val = agent.online.agent_nets[0].forward(torch.as_tensor(test_input, dtype=torch.float32, device=agent.device)).detach().cpu().numpy()
-		print(f" Q value at obs: {q_val}")
 
 		reward_history.append(ep_reward)
 		mean10 = float(np.mean(reward_history[-10:]))
