@@ -62,7 +62,7 @@ def run_training(
 	obs0, info0 = env.reset(seed=seed)
 	state0 = np.asarray(info0["state"], dtype=np.float32)
 	seen_state_signatures = {_state_signature(state0)}
-	obs_dim = int(np.asarray(obs0).shape[-1])
+	obs_dim = int(obs0.shape[1])  # obs_dim = obs vector per agent
 	state_dim = int(state0.shape[0])
 	action_dim = int(env.action_space.nvec[0])
 
@@ -90,9 +90,11 @@ def run_training(
 	print(f"Device={agent.device}")
 
 	for ep in range(1, episodes + 1):
+
 		obs, info = env.reset(seed=seed + ep)
 		state = np.asarray(info["state"], dtype=np.float32)
 		seen_state_signatures.add(_state_signature(state))
+		obs_state = np.asarray(obs, dtype=np.float32)  # shape: (num_agents, obs_dim)
 
 		ep_reward = 0.0
 		loss_values: list[float] = []
@@ -108,26 +110,27 @@ def run_training(
 				eps_start=epsilon_start,
 				eps_end=epsilon_end,
 			)
-			actions = agent.select_actions(obs, epsilon=epsilon)
+			actions = agent.select_actions(obs_state, epsilon=epsilon)
 			next_obs, reward, terminated, truncated, next_info = env.step(actions)
 			next_state = np.asarray(next_info["state"], dtype=np.float32)
 			seen_state_signatures.add(_state_signature(next_state))
+			next_obs_state = np.asarray(next_obs, dtype=np.float32)  # shape: (num_agents, obs_dim)
 
 			# Treat both true terminal and time-limit truncation as terminal for TD bootstrap.
 			done_for_bootstrap = bool(terminated or truncated)
 			done_for_episode = bool(terminated or truncated)
 
 			replay.push(
-				obs=obs,
+				obs=obs_state,
 				state=state,
 				actions=actions,
 				reward=float(reward),
-				next_obs=next_obs,
+				next_obs=next_obs_state,
 				next_state=next_state,
 				done=done_for_bootstrap,
 			)
 
-			obs = next_obs
+			obs_state = next_obs_state
 			state = next_state
 			ep_reward += float(reward)
 			ep_len += 1
@@ -144,7 +147,10 @@ def run_training(
 			if done_for_episode:
 				break
 		
-		print(f" Q value at (1, 2, 1, 0): {agent.online.agent_nets[0].forward(torch.as_tensor([1, 2, 1, 0], dtype=torch.float32, device=agent.device)).detach().cpu().numpy()}")
+		# Test Q value: truyền đúng shape (1, obs_dim)
+		test_input = np.asarray(obs_state, dtype=np.float32)  # shape: (num_agents, obs_dim)
+		q_val = agent.online.agent_nets[0].forward(torch.as_tensor(test_input, dtype=torch.float32, device=agent.device)).detach().cpu().numpy()
+		print(f" Q value at obs: {q_val}")
 
 		reward_history.append(ep_reward)
 		mean10 = float(np.mean(reward_history[-10:]))

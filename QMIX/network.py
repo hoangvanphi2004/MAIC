@@ -130,7 +130,7 @@ class QMIXModel(nn.Module):
 
         per_agent_qs = []
         for agent_idx, agent_net in enumerate(self.agent_nets):
-            agent_obs = obs[:, agent_idx, :]
+            agent_obs = obs[:, agent_idx, :]  # shape: (batch_size, obs_dim)
             agent_q = agent_net(agent_obs)
             per_agent_qs.append(agent_q)
 

@@ -55,14 +55,12 @@ class QMIXAgent:
 		if random.random() < epsilon:
 			return np.array([random.randrange(self.action_dim) for _ in range(self.n_agents)], dtype=np.int64)
 
-		obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
-		# Action selection only needs per-agent Q values, not the mixer/state branch.
-		per_agent_qs = []
-		for agent_idx, agent_net in enumerate(self.online.agent_nets):
-			agent_obs = obs_t[:, agent_idx, :]
-			agent_q = agent_net(agent_obs)
-			per_agent_qs.append(agent_q)
-		agent_qs = torch.stack(per_agent_qs, dim=1)
+		obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+		if obs_t.ndim == 2:
+			obs_t = obs_t.unsqueeze(0)  # shape: (1, n_agents, obs_dim)
+		# Truyền dummy state nếu không có state
+		dummy_state = torch.zeros(obs_t.shape[0], self.online.state_dim, device=self.device)
+		agent_qs, _ = self.online(obs=obs_t, state=dummy_state, actions=None)
 		greedy = agent_qs.argmax(dim=-1).squeeze(0)
 		return greedy.detach().cpu().numpy().astype(np.int64)
 
