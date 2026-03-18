@@ -1,12 +1,12 @@
-from __future__ import annotations
 
-import argparse
+from __future__ import annotations
+import random
 import random
 from pathlib import Path
-
 import numpy as np
 import torch
-
+import json
+import os
 from multigrid_gym_adapter import make_refactor_multigrid_gym_env
 from QMIX import QMIXAgent
 from utils import ReplayBuffer, TrainingMetrics
@@ -189,49 +189,30 @@ def run_training(
 	print(f"Training finished. Final checkpoint: {final_path}")
 	env.close()
 
-
-def build_arg_parser() -> argparse.ArgumentParser:
-	parser = argparse.ArgumentParser(description="Train QMIX using converted Gym multigrid adapter.")
-	parser.add_argument("--env-id", type=str, default="MultiGrid-MultiTargetEmpty-4x4-v0")
-	parser.add_argument("--num-agents", type=int, default=2)
-	parser.add_argument("--episodes", type=int, default=10000)
-	parser.add_argument("--max-steps", type=int, default=40)
-	parser.add_argument("--buffer-size", type=int, default=10000)
-	parser.add_argument("--batch-size", type=int, default=64)
-	parser.add_argument("--lr", type=float, default=1e-4)
-	parser.add_argument("--gamma", type=float, default=0.99)
-	parser.add_argument("--tau", type=float, default=0.01)
-	parser.add_argument("--start-steps", type=int, default=1000)
-	parser.add_argument("--epsilon-start", type=float, default=1.0)
-	parser.add_argument("--epsilon-end", type=float, default=0.05)
-	parser.add_argument("--epsilon-decay-steps", type=int, default=5000)
-	parser.add_argument("--train-every", type=int, default=1)
-	parser.add_argument("--updates-per-step", type=int, default=1)
-	parser.add_argument("--save-every", type=int, default=100)
-	parser.add_argument("--seed", type=int, default=0)
-	parser.add_argument("--model-dir", type=str, default="runs/qmix")
-	return parser
-
-
 if __name__ == "__main__":
-	args = build_arg_parser().parse_args()
+	config_path = os.path.join(os.path.dirname(__file__), "config.json")
+	if not os.path.exists(config_path):
+		raise FileNotFoundError(f"Config file not found: {config_path}")
+	with open(config_path, "r", encoding="utf-8") as f:
+		config = json.load(f)
+
 	run_training(
-		env_id=args.env_id,
-		num_agents=args.num_agents,
-		episodes=args.episodes,
-		max_steps=args.max_steps,
-		buffer_size=args.buffer_size,
-		batch_size=args.batch_size,
-		lr=args.lr,
-		gamma=args.gamma,
-		tau=args.tau,
-		start_steps=args.start_steps,
-		epsilon_start=args.epsilon_start,
-		epsilon_end=args.epsilon_end,
-		epsilon_decay_steps=args.epsilon_decay_steps,
-		train_every=args.train_every,
-		updates_per_step=args.updates_per_step,
-		save_every=args.save_every,
-		seed=args.seed,
-		model_dir=args.model_dir,
+		env_id=config.get("env_id", "MultiGrid-MultiTargetEmpty-4x4-v0"),
+		num_agents=config.get("num_agents", 2),
+		episodes=config.get("episodes", 10000),
+		max_steps=config.get("max_steps", 40),
+		buffer_size=config.get("buffer_size", 100000),
+		batch_size=config.get("batch_size", 64),
+		lr=config.get("learning_rate", 3e-4),
+		gamma=config.get("gamma", 0.99),
+		tau=config.get("tau", 0.01),
+		start_steps=config.get("start_steps", 1000),
+		epsilon_start=config.get("epsilon_start", 1.0),
+		epsilon_end=config.get("epsilon_end", 0.05),
+		epsilon_decay_steps=config.get("epsilon_decay_steps", 5000),
+		train_every=config.get("train_every", 1),
+		updates_per_step=config.get("updates_per_step", 1),
+		save_every=config.get("save_every", 100),
+		seed=config.get("seed", 0),
+		model_dir=config.get("save_path", "runs/qmix"),
 	)
