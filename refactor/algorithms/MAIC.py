@@ -161,6 +161,7 @@ class SAC_REINFORCE:
 			y_mean=y_mean,
 			y_std=y_std,
 			normalize_for_loss=True,
+			eps_adv=eps
 		)
 		
 	def update_sac(self, replay_buffer, batch_size=64):
