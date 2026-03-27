@@ -45,6 +45,8 @@ class Actor(nn.Module):
 		action = dist.sample()
 		log_prob = dist.log_prob(action)
 		return action, log_prob, action_probs
+	
+	
 class Critic(nn.Module):
 	def __init__(self, num_agents, state_shape, action_dim_per_agent=1, hidden_dim=256):
 		super(Critic, self).__init__()
