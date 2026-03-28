@@ -6,7 +6,7 @@ import torch.nn.functional as F
 class AgentQNetwork(nn.Module):
     """Per-agent feed-forward Q-network for current-step inference."""
 
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 64):
+    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 128):
         super().__init__()
         self.obs_dim = obs_dim
         self.action_dim = action_dim
@@ -30,8 +30,8 @@ class MixingNetwork(nn.Module):
         self,
         n_agents: int,
         state_dim: int,
-        mixing_hidden_dim: int = 32,
-        hypernet_hidden_dim: int = 64,
+        mixing_hidden_dim: int = 128,
+        hypernet_hidden_dim: int = 128,
     ):
         super().__init__()
         self.n_agents = n_agents
@@ -87,9 +87,9 @@ class QMIXModel(nn.Module):
         obs_dim: int,
         state_dim: int,
         action_dim: int,
-        agent_hidden_dim: int = 64,
-        mixing_hidden_dim: int = 32,
-        hypernet_hidden_dim: int = 64,
+        agent_hidden_dim: int = 128,
+        mixing_hidden_dim: int = 128,
+        hypernet_hidden_dim: int = 128,
     ):
         super().__init__()
         self.n_agents = n_agents

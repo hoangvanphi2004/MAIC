@@ -49,7 +49,7 @@ class SAC_REINFORCE:
 		
 		self.auto_entropy_tuning = auto_entropy_tuning
 		if self.auto_entropy_tuning:
-			self.target_entropy = float(self.num_agents * action_dim) * self.target_entropy_scale
+			self.target_entropy = torch.log(torch.tensor(self.num_agents * action_dim, dtype=torch.float32)) * self.target_entropy_scale
 			self.log_alpha1 = torch.tensor([np.log(alpha1)], dtype=torch.float32, requires_grad=True, device=self.device)
 			self.alpha1_optimizer = optim.Adam([self.log_alpha1], lr=lr)
 			self.alpha1 = self.log_alpha1.exp()
