@@ -42,8 +42,8 @@ class SAC_REINFORCE:
 			target.load_state_dict(source.state_dict())
 		self.actor_optimizer = optim.Adam([p for a in self.actors for p in a.parameters()], lr=lr)
 		
-		self.critic = Critic(self.num_agents, state_shape, action_dim_per_agent=self.n_actions, hidden_dim=256).to(self.device)
-		self.critic_target = Critic(self.num_agents, state_shape, action_dim_per_agent=self.n_actions, hidden_dim=256).to(self.device)
+		self.critic = Critic(self.num_agents, state_shape, action_dim_per_agent=self.n_actions, hidden_dim=256, critic_bias=2000).to(self.device)
+		self.critic_target = Critic(self.num_agents, state_shape, action_dim_per_agent=self.n_actions, hidden_dim=256, critic_bias=2000).to(self.device)
 		self.critic_target.load_state_dict(self.critic.state_dict())
 		self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=lr)
 		
