@@ -10,7 +10,7 @@
   "tau": 0.01,
   "start_steps": 1000,
   "epsilon_start": 1.0,
-  "epsilon_end": 0.0005,
+  "epsilon_end": 0.05,
   "epsilon_decay_steps": 5000,
   "train_every": 1,
   "updates_per_step": 1,
