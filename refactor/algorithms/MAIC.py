@@ -299,7 +299,7 @@ class SAC_REINFORCE:
 
 				# Policy loss: expectation over all actions
 				policy_loss_a = (
-					action_probs * (
+					(
 						(alpha1 * self.scaled_entropy_coef + self.alpha_kl) * (log_action_probs + 1)
 						- self.alpha_kl * log_old_probs
 						- adv_expand
