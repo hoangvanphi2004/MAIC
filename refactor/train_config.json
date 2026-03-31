@@ -16,8 +16,11 @@
   "video_every": 100,
   "plot_every": 10,
   "metrics_save_every": 10,
-  "scaled_information_gain_coef": 0.0,
-  "scaled_entropy_coef": 0.0,
+  "scaled_information_gain_coef": 1,
+  "normalize_information_gain": true,
+  "std_ale_fixed": 1e-4,
+  "critic_bias": 2000,
+  "scaled_entropy_coef": 1,
   "model_config": {
     "hidden_dim": 128,
     "lr": 0.0003,

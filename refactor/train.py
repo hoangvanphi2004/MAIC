@@ -33,6 +33,9 @@ def run_training(
 	metrics_save_every=10,
 	scaled_information_gain_coef=0.0,
 	scaled_entropy_coef=0.0,
+	normalize_information_gain=True,
+	std_ale_fixed=1.0,
+	critic_bias=2000,
 ):
 	SAC_REINFORCE.scaled_information_gain_coef = float(scaled_information_gain_coef)
 	SAC_REINFORCE.scaled_entropy_coef = float(scaled_entropy_coef)
@@ -127,6 +130,9 @@ def run_training(
 		policy_update_steps=resolved_model_config['policy_update_steps'],
 		auto_entropy_tuning=resolved_model_config['auto_entropy_tuning'],
 		target_entropy_scale=resolved_model_config['target_entropy_scale'],
+		normalize_information_gain=locals().get('normalize_information_gain', True),
+		std_ale_fixed=locals().get('std_ale_fixed', 1.0),
+		critic_bias=locals().get('critic_bias', 2000)
 	)
 	replay_buffer = ReplayBuffer(capacity=replay_size)
 	total_steps = 0
