@@ -20,7 +20,7 @@ def save_plots(metrics, run_path, ep):
 		ep: Episode number for filename
 	"""
 	fig, axes = plt.subplots(3, 3, figsize=(18, 10))
-	(ax_reward, ax_policy, ax_info), (ax_critic, ax_q, ax_entropy), (ax_alpha1_alpha2, ax_unique_states, _) = axes
+	(ax_reward, ax_policy, ax_info), (ax_critic, ax_q, ax_entropy), (ax_alpha1_alpha2, _, _) = axes
 
 	# Plot episode rewards
 	rewards = metrics.get('episode_rewards', [])
@@ -86,15 +86,6 @@ def save_plots(metrics, run_path, ep):
 		ax_alpha1_alpha2.grid(True, alpha=0.3)
 	else:
 		ax_alpha1_alpha2.set_axis_off()
-
-	# Plot cumulative unique states encountered over episodes
-	unique_states = metrics.get('unique_states_seen', [])
-	if unique_states:
-		ax_unique_states.plot(unique_states, marker='o', ms=3, color='tab:red')
-		ax_unique_states.set_title('Unique States Seen (cumulative)')
-		ax_unique_states.grid(True, alpha=0.3)
-	else:
-		ax_unique_states.set_axis_off()
 
 	plt.tight_layout()
 	out = run_path / f'metrics.png'

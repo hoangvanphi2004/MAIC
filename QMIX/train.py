@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 import random
-import random
 from pathlib import Path
 import numpy as np
 import torch
@@ -27,6 +26,15 @@ def _state_signature(state_arr: np.ndarray) -> bytes:
 	return s.tobytes()
 
 
+def _set_global_seed(seed: int) -> None:
+	seed = int(seed)
+	random.seed(seed)
+	np.random.seed(seed)
+	torch.manual_seed(seed)
+	if torch.cuda.is_available():
+		torch.cuda.manual_seed_all(seed)
+
+
 def run_training(
 	env_id: str = "MultiGrid-MultiTargetEmpty-4x4-v0",
 	num_agents: int = 2,
@@ -47,9 +55,7 @@ def run_training(
 	seed: int = 0,
 	model_dir: str = "runs/qmix",
 ) -> None:
-	random.seed(seed)
-	np.random.seed(seed)
-	torch.manual_seed(seed)
+	_set_global_seed(seed)
 
 	env = make_refactor_multigrid_gym_env(
 		env_id=env_id,
@@ -58,6 +64,7 @@ def run_training(
 		render_mode=None,
 		seed=seed,
 	)
+	env.action_space.seed(int(seed))
 
 	obs0, info0 = env.reset(seed=seed)
 	state0 = np.asarray(info0["state"], dtype=np.float32)

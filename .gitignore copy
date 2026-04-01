@@ -3,6 +3,5 @@ plot.py
 /QMIX/.gitignore
 /QMIX/runs
 /refactor/runs
-/__pycache__
 *.json
 *.png

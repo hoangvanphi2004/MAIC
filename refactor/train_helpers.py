@@ -7,7 +7,6 @@ class TrainingMetrics:
 		self.data = {
 			'episode_rewards': [],
 			'episode_lengths': [],
-			'unique_states_seen': [],
 			'critic_losses': [],
 			'actor_losses': [],
 			'entropies': [],
@@ -37,10 +36,9 @@ class TrainingMetrics:
 		values = [s[key] for s in stats_list if key in s and s[key] is not None]
 		return self._mean_or_none(values)
 
-	def append_episode(self, ep_reward, ep_len, ep_sac_stats, unique_states_seen=None):
+	def append_episode(self, ep_reward, ep_len, ep_sac_stats):
 		self.data['episode_rewards'].append(ep_reward)
 		self.data['episode_lengths'].append(ep_len)
-		self.data['unique_states_seen'].append(unique_states_seen)
 		self.data['actor_losses'].append(self._mean_from_stats(ep_sac_stats, 'policy_loss'))
 		self.data['critic_losses'].append(self._mean_from_stats(ep_sac_stats, 'critic_loss'))
 		self.data['alpha1_losses'].append(self._mean_from_stats(ep_sac_stats, 'alpha1_loss'))

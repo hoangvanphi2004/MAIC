@@ -12,17 +12,16 @@ class BaseNet(nn.Module):
                  use_random_prior: bool = True, init_seed: Optional[int] = None):
         super().__init__()
         
-        # Set unique random seed for diverse initialization
-        if init_seed is not None:
-            torch.manual_seed(init_seed)
-            np.random.seed(init_seed)
+        # Use a local numpy RNG so per-model diversity does not mutate global RNG state.
+        local_rng = np.random.default_rng(init_seed) if init_seed is not None else None
         
         # Random projection layer (frozen, not trained) for diversity on unseen states
         self.use_random_prior = use_random_prior
         if use_random_prior:
             self.random_projection = nn.Linear(in_dim, hidden, bias=True)
             # Initialize with diverse weights and FREEZE
-            nn.init.orthogonal_(self.random_projection.weight, gain=np.random.uniform(0.5, 2.0))
+            prior_gain = float(local_rng.uniform(0.5, 2.0)) if local_rng is not None else 1.0
+            nn.init.orthogonal_(self.random_projection.weight, gain=prior_gain)
             nn.init.uniform_(self.random_projection.bias, -1.0, 1.0)
             # Freeze this layer
             for param in self.random_projection.parameters():
@@ -44,11 +43,19 @@ class BaseNet(nn.Module):
         self.var_head = nn.Linear(last, out_dim)
         
         # Diverse initialization with different scales
-        init_scale = np.random.uniform(0.5, 2.0) if init_seed is not None else 1.0
-        for m in self.modules():
-            if isinstance(m, nn.Linear) and m is not self.random_projection:
-                nn.init.orthogonal_(m.weight, gain=np.sqrt(2) * init_scale)
-                nn.init.constant_(m.bias, 0.0)
+        init_scale = float(local_rng.uniform(0.5, 2.0)) if local_rng is not None else 1.0
+        if init_seed is not None:
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(int(init_seed))
+                for m in self.modules():
+                    if isinstance(m, nn.Linear) and m is not self.random_projection:
+                        nn.init.orthogonal_(m.weight, gain=np.sqrt(2) * init_scale)
+                        nn.init.constant_(m.bias, 0.0)
+        else:
+            for m in self.modules():
+                if isinstance(m, nn.Linear) and m is not self.random_projection:
+                    nn.init.orthogonal_(m.weight, gain=np.sqrt(2) * init_scale)
+                    nn.init.constant_(m.bias, 0.0)
         nn.init.constant_(self.var_head.bias, -1.0)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

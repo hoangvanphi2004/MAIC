@@ -4,7 +4,6 @@ import argparse
 import json
 import multigrid.rllib
 import os
-import random
 import ray
 import ray.train
 import ray.tune
@@ -127,6 +126,7 @@ def get_algorithm_config(
     env: str = 'MultiGrid-Empty-8x8-v0',
     env_config: dict = {},
     num_agents: int = 2,
+    seed: int = 42,
     # lstm: bool = False, TODO: implement LSTM model
     num_workers: int = 0,
     num_gpus: int = 0,
@@ -143,7 +143,7 @@ def get_algorithm_config(
         enable_env_runner_and_connector_v2=True,
         enable_rl_module_and_learner=True,
     )
-    config = config.debugging(seed=random.randint(0, 1000000))
+    config = config.debugging(seed=int(seed))
     config = config.env_runners(
         num_env_runners=num_workers,
         num_envs_per_env_runner=1,
