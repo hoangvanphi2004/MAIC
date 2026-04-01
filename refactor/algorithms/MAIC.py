@@ -289,6 +289,7 @@ class SAC_REINFORCE:
 				if len(advantages) > 1:
 					advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 				action_probs = action_probs_all[a_i]
+				agent_new_log_probs = new_log_probs_all[a_i]
 				entropy = entropy_all[a_i].mean()
 				kl_divergence = (
 					action_probs * (
@@ -301,7 +302,7 @@ class SAC_REINFORCE:
 					- self.alpha_kl * joint_old_log_probs
 					- advantages
 					- alpha2 * scaled_info_bonus
-				).detach() * joint_new_log_probs).mean())
+				).detach() * agent_new_log_probs).mean())
 
 				total_policy_loss += policy_loss_a
 				total_entropy += entropy.item()
