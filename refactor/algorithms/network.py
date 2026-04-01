@@ -48,7 +48,7 @@ class Actor(nn.Module):
 	
 	
 class Critic(nn.Module):
-	def __init__(self, num_agents, state_shape, action_dim_per_agent=1, hidden_dim=256, critic_bias=None):
+	def __init__(self, num_agents, state_shape, action_dim_per_agent=1, hidden_dim=128):
 		super(Critic, self).__init__()
 		self.num_agents = num_agents
 		self._action_dim_per_agent = action_dim_per_agent
@@ -71,10 +71,6 @@ class Critic(nn.Module):
 		self.q2_fc1 = nn.Linear(joint_input_size, hidden_dim)
 		self.q2_fc2 = nn.Linear(hidden_dim, hidden_dim)
 		self.q2_out = nn.Linear(hidden_dim, 1)
-		# Set bias if requested
-		if critic_bias is not None:
-			nn.init.constant_(self.q1_out.bias, critic_bias)
-			nn.init.constant_(self.q2_out.bias, critic_bias)
 	def encode_global_state(self, state):
 		if self.is_image_state:
 			x = F.relu(self.conv1(state))

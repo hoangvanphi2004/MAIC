@@ -18,7 +18,7 @@ def main():
     x_test_t = torch.from_numpy(x_test)
     print("Data generated.")
     # Create and train ensemble
-    ens = EnsembleRegressor(M=5, in_dim=1, out_dim=1, hidden=64, nlayers=2)
+    ens = EnsembleRegressor(M=5, in_dim=1, out_dim=1, hidden=128, nlayers=2)
     train_ensemble(ens, x_train_t, y_train_t, epochs=100, batch_size=32, lr=3e-4)
     print("Ensemble trained.")
 

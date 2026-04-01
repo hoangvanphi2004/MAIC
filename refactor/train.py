@@ -1,10 +1,12 @@
 import time
+import random
 from pathlib import Path
 import numpy as np
 import gymnasium as gym
 import multigrid
 import multigrid.envs
 import imageio
+import torch
 
 from algorithms.MAIC import SAC_REINFORCE
 from algorithms.buffer import ReplayBuffer
@@ -16,6 +18,7 @@ def run_training(
 	env_id='MultiGrid-MultiTargetEmpty-16x16-v0',
 	num_agents=2,
 	obs_state_mode='simple',
+	seed=42,
 	model_config=None,
 	episodes=5000,
 	steps_per_episode=40,
@@ -33,12 +36,20 @@ def run_training(
 	metrics_save_every=10,
 	scaled_information_gain_coef=0.0,
 	scaled_entropy_coef=0.0,
-	normalize_information_gain=True,
-	std_ale_fixed=1.0,
-	critic_bias=2000,
 ):
+	def _set_global_seed(seed_value):
+		seed_value = int(seed_value)
+		random.seed(seed_value)
+		np.random.seed(seed_value)
+		torch.manual_seed(seed_value)
+		if torch.cuda.is_available():
+			torch.cuda.manual_seed_all(seed_value)
+
+	_set_global_seed(seed)
+
 	SAC_REINFORCE.scaled_information_gain_coef = float(scaled_information_gain_coef)
 	SAC_REINFORCE.scaled_entropy_coef = float(scaled_entropy_coef)
+	print('seed:', int(seed))
 	print('scaled_information_gain_coef:', SAC_REINFORCE.scaled_information_gain_coef)
 	print('scaled_entropy_coef:', SAC_REINFORCE.scaled_entropy_coef)
 
@@ -63,6 +74,8 @@ def run_training(
 		env = gym.make(env_id, num_agents=num_agents, render_mode='rgb_array', max_steps=steps_per_episode)
 	else:
 		env = gym.make(env_id, num_agents=num_agents, max_steps=steps_per_episode)
+	for i in range(num_agents):
+		env.action_space[i].seed(int(seed) + i)
 	if obs_state_mode not in ('full', 'simple'):
 		raise ValueError(f"obs_state_mode must be 'full' or 'simple', got: {obs_state_mode}")
 
@@ -102,14 +115,7 @@ def run_training(
 			state_out = flat_obs
 		return obs_out, state_out
 
-	def _state_signature(state_arr):
-		s = np.asarray(state_arr)
-		if np.issubdtype(s.dtype, np.floating):
-			s = np.round(s, 4)
-		s = np.ascontiguousarray(s)
-		return s.tobytes()
-
-	obs0, info = env.reset()
+	obs0, info = env.reset(seed=int(seed))
 	obs0_arr, state0_arr = _extract_obs_state(obs0, info)
 	obs_shape = obs0_arr.shape[1:]
 	state_shape = state0_arr.shape
@@ -120,6 +126,7 @@ def run_training(
 		state_shape,
 		action_dim,
 		num_agents=num_agents,
+		model_init_seed=int(seed),
 		hidden_dim=resolved_model_config['hidden_dim'],
 		lr=resolved_model_config['lr'],
 		gamma=resolved_model_config['gamma'],
@@ -130,20 +137,15 @@ def run_training(
 		policy_update_steps=resolved_model_config['policy_update_steps'],
 		auto_entropy_tuning=resolved_model_config['auto_entropy_tuning'],
 		target_entropy_scale=resolved_model_config['target_entropy_scale'],
-		normalize_information_gain=locals().get('normalize_information_gain', True),
-		std_ale_fixed=locals().get('std_ale_fixed', 1.0),
-		critic_bias=locals().get('critic_bias', 2000)
 	)
 	replay_buffer = ReplayBuffer(capacity=replay_size)
 	total_steps = 0
 	metrics = TrainingMetrics()
-	seen_state_signatures = {_state_signature(state0_arr)}
 	start_time = time.time()
 
 	for ep in range(episodes):
-		obs_dict, info = env.reset()
+		obs_dict, info = env.reset(seed=int(seed) + ep + 1)
 		obs, state = _extract_obs_state(obs_dict, info)
-		seen_state_signatures.add(_state_signature(state))
 		ep_reward = 0.0
 		ep_len = 0
 		ep_sac_stats = []
@@ -165,7 +167,6 @@ def run_training(
 			rewards_list = [rewards_dict[i] for i in range(num_agents)]
 			shared_reward = float(sum(rewards_list))
 			next_obs, next_state = _extract_obs_state(next_obs_dict, info)
-			seen_state_signatures.add(_state_signature(next_state))
 			done = dones.all() or (step == steps_per_episode - 1)
 			if record_this_ep:
 				frame = env.render()
@@ -183,7 +184,7 @@ def run_training(
 			ep_len = step + 1
 			if done:
 				break
-		metrics.append_episode(ep_reward, ep_len, ep_sac_stats, unique_states_seen=len(seen_state_signatures))
+		metrics.append_episode(ep_reward, ep_len, ep_sac_stats)
 		if (ep + 1) % 10 == 0:
 			elapsed = time.time() - start_time
 			metrics.print_episode_metrics(ep, ep_reward, ep_len, elapsed, resolved_model_config['alpha_kl'], len(replay_buffer), total_steps)
