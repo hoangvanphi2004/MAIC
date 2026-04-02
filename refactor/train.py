@@ -14,6 +14,14 @@ from plot import save_plots
 from train_helpers import TrainingMetrics
 
 
+def _state_signature(state_arr):
+	state_np = np.asarray(state_arr)
+	if np.issubdtype(state_np.dtype, np.floating):
+		state_np = np.round(state_np, 4)
+	state_np = np.ascontiguousarray(state_np)
+	return state_np.tobytes()
+
+
 def run_training(
 	env_id='MultiGrid-MultiTargetEmpty-16x16-v0',
 	num_agents=2,
@@ -117,6 +125,7 @@ def run_training(
 
 	obs0, info = env.reset(seed=int(seed))
 	obs0_arr, state0_arr = _extract_obs_state(obs0, info)
+	seen_state_signatures = {_state_signature(state0_arr)}
 	obs_shape = obs0_arr.shape[1:]
 	state_shape = state0_arr.shape
 	action_dim = env.action_space[0].n
@@ -146,6 +155,7 @@ def run_training(
 	for ep in range(episodes):
 		obs_dict, info = env.reset(seed=int(seed) + ep + 1)
 		obs, state = _extract_obs_state(obs_dict, info)
+		seen_state_signatures.add(_state_signature(state))
 		ep_reward = 0.0
 		ep_len = 0
 		ep_sac_stats = []
@@ -167,6 +177,7 @@ def run_training(
 			rewards_list = [rewards_dict[i] for i in range(num_agents)]
 			shared_reward = float(sum(rewards_list))
 			next_obs, next_state = _extract_obs_state(next_obs_dict, info)
+			seen_state_signatures.add(_state_signature(next_state))
 			done = dones.all() or (step == steps_per_episode - 1)
 			if record_this_ep:
 				frame = env.render()
@@ -184,10 +195,19 @@ def run_training(
 			ep_len = step + 1
 			if done:
 				break
-		metrics.append_episode(ep_reward, ep_len, ep_sac_stats)
+		metrics.append_episode(ep_reward, ep_len, ep_sac_stats, unique_states_seen=len(seen_state_signatures))
 		if (ep + 1) % 10 == 0:
 			elapsed = time.time() - start_time
-			metrics.print_episode_metrics(ep, ep_reward, ep_len, elapsed, resolved_model_config['alpha_kl'], len(replay_buffer), total_steps)
+			metrics.print_episode_metrics(
+				ep,
+				ep_reward,
+				ep_len,
+				elapsed,
+				resolved_model_config['alpha_kl'],
+				len(replay_buffer),
+				total_steps,
+				unique_states_seen=len(seen_state_signatures),
+			)
 		if (ep + 1) % save_every == 0:
 			model_path = run_path / f'model_ep{ep+1}.pth'
 			agent.save(str(model_path))

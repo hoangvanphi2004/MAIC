@@ -17,6 +17,7 @@ class TrainingMetrics:
 			'alpha2_values': [],
 			'information_gains': [],
 			'kl_divergences': [],
+			'unique_states_seen': [],
 		}
 
 	def __getitem__(self, key):
@@ -36,7 +37,7 @@ class TrainingMetrics:
 		values = [s[key] for s in stats_list if key in s and s[key] is not None]
 		return self._mean_or_none(values)
 
-	def append_episode(self, ep_reward, ep_len, ep_sac_stats):
+	def append_episode(self, ep_reward, ep_len, ep_sac_stats, unique_states_seen=None):
 		self.data['episode_rewards'].append(ep_reward)
 		self.data['episode_lengths'].append(ep_len)
 		self.data['actor_losses'].append(self._mean_from_stats(ep_sac_stats, 'policy_loss'))
@@ -49,6 +50,7 @@ class TrainingMetrics:
 		self.data['alpha2_values'].append(self._mean_from_stats(ep_sac_stats, 'alpha2_value'))
 		self.data['information_gains'].append(self._mean_from_stats(ep_sac_stats, 'information_gain'))
 		self.data['kl_divergences'].append(self._mean_from_stats(ep_sac_stats, 'kl_divergence'))
+		self.data['unique_states_seen'].append(None if unique_states_seen is None else int(unique_states_seen))
 
 	def as_dict(self):
 		return self.data
@@ -100,7 +102,7 @@ class TrainingMetrics:
 	def _recent_non_none(self, key, window=10):
 		return [x for x in self.data[key][-window:] if x is not None]
 
-	def print_episode_metrics(self, ep_idx, ep_reward, ep_len, elapsed, alpha_kl_value, buffer_size, total_steps):
+	def print_episode_metrics(self, ep_idx, ep_reward, ep_len, elapsed, alpha_kl_value, buffer_size, total_steps, unique_states_seen=None):
 		recent_rewards = self.data['episode_rewards'][-10:]
 		recent_lengths = self.data['episode_lengths'][-10:]
 		recent_actor = self._recent_non_none('actor_losses')
@@ -134,4 +136,7 @@ class TrainingMetrics:
 			f'Alpha2: {self._fmt_metric(self._mean_or_none(recent_alpha2), 4)} | '
 			f'AlphaKL: {alpha_kl_value:.4f}'
 		)
-		print(f'{elapsed:.1f}s\t{ep_num}\tBuffer Size: {buffer_size} | Total Steps: {total_steps}')
+		if unique_states_seen is not None:
+			print(f'{elapsed:.1f}s\t{ep_num}\tBuffer Size: {buffer_size} | Total Steps: {total_steps} | UniqueStates: {int(unique_states_seen)}')
+		else:
+			print(f'{elapsed:.1f}s\t{ep_num}\tBuffer Size: {buffer_size} | Total Steps: {total_steps}')
