@@ -226,9 +226,12 @@ class SAC_REINFORCE:
 
 			next_q1_target, next_q2_target = self.critic_target(next_state, next_actions_oh)
 			next_q_target = torch.min(next_q1_target, next_q2_target)
-
-			info_bonus = self.information_bonus(next_state, next_actions_oh)
-			scaled_info_bonus = self.scaled_information_gain_coef * info_bonus
+			if self.scaled_information_gain_coef > 0:
+				info_bonus = self.information_bonus(next_state, next_actions_oh)
+				scaled_info_bonus = self.scaled_information_gain_coef * info_bonus
+			else:
+				scaled_info_bonus = torch.zeros_like(reward_for_target)
+				info_bonus = torch.zeros_like(reward_for_target)
 			scaled_next_log_prob = self.scaled_entropy_coef * next_log_prob
 			target_q = next_q_target - self.alpha1 * scaled_next_log_prob.unsqueeze(1) + self.alpha2 * scaled_info_bonus
 			target_q_value = reward_for_target + (1 - done.unsqueeze(1)) * self.gamma * target_q
@@ -252,8 +255,12 @@ class SAC_REINFORCE:
 				probs_i = actor(obs_a_i).clamp_min(eps)
 				probs_i = probs_i / probs_i.sum(dim=-1, keepdim=True)
 				old_policy_probs.append(probs_i)
-		info_bonus = self.information_bonus(state, actions_oh)
-		scaled_info_bonus = self.scaled_information_gain_coef * info_bonus.squeeze(-1)
+		if self.scaled_information_gain_coef > 0:
+			info_bonus = self.information_bonus(state, actions_oh)
+			scaled_info_bonus = self.scaled_information_gain_coef * info_bonus.squeeze(-1)
+		else:
+			scaled_info_bonus = torch.zeros_like(reward)
+			info_bonus = torch.zeros_like(reward)
 		alpha1 = self.alpha1.detach() if isinstance(self.alpha1, torch.Tensor) else self.alpha1
 		alpha2 = self.alpha2.detach() if isinstance(self.alpha2, torch.Tensor) else self.alpha2
 		actor_loss_value = 0.0
@@ -321,56 +328,65 @@ class SAC_REINFORCE:
 
 		t5 = time.time()
 		# Update ensemble model with current batch
-		self.train_ensemble_model(state, actions_oh, next_state)
+		if self.scaled_information_gain_coef > 0:
+			self.train_ensemble_model(state, actions_oh, next_state)
 		t6 = time.time()
 
 		# Update alpha1 and alpha2 if auto-tuning is enabled
 		alpha_info = {}
 		if self.auto_entropy_tuning:
 			# Update alpha1
-			with torch.no_grad():
-				sampled_logp = 0
-				sampled_actions = []
-				for i, actor in enumerate(self.actors):
-					obs_a_i = obs[:, i]
-					probs_i = actor(obs_a_i)
-					dist_i = Categorical(probs_i)
-					sampled_a_i = dist_i.sample()
-					sampled_logp = sampled_logp + dist_i.log_prob(sampled_a_i)
-					sampled_actions.append(sampled_a_i.unsqueeze(1).long())
-			sampled_actions_cat = torch.cat(sampled_actions, dim=1)
-			sampled_actions_oh = F.one_hot(sampled_actions_cat.long(), num_classes=self.n_actions).float()
+			if self.scaled_entropy_coef > 0: 
+				with torch.no_grad():
+					sampled_logp = 0
+					sampled_actions = []
+					for i, actor in enumerate(self.actors):
+						obs_a_i = obs[:, i]
+						probs_i = actor(obs_a_i)
+						dist_i = Categorical(probs_i)
+						sampled_a_i = dist_i.sample()
+						sampled_logp = sampled_logp + dist_i.log_prob(sampled_a_i)
+						sampled_actions.append(sampled_a_i.unsqueeze(1).long())
+				sampled_actions_cat = torch.cat(sampled_actions, dim=1)
+				sampled_actions_oh = F.one_hot(sampled_actions_cat.long(), num_classes=self.n_actions).float()
 
-			alpha1_loss = -(self.log_alpha1.exp() * (sampled_logp + self.target_entropy).detach()).mean()
-			self.alpha1_optimizer.zero_grad()
-			alpha1_loss.backward()
-			self.alpha1_optimizer.step()
-			min_log_alpha = np.log(self.alpha_min)
-			self.log_alpha1.data.clamp_(min=min_log_alpha)
-			self.alpha1 = self.log_alpha1.exp()
+				alpha1_loss = -(self.log_alpha1.exp() * (sampled_logp + self.target_entropy).detach()).mean()
+				self.alpha1_optimizer.zero_grad()
+				alpha1_loss.backward()
+				self.alpha1_optimizer.step()
+				min_log_alpha = np.log(self.alpha_min)
+				self.log_alpha1.data.clamp_(min=min_log_alpha)
+				self.alpha1 = self.log_alpha1.exp()
+			else:
+				alpha1_loss = torch.tensor(0.0)
+				self.alpha1 = self.alpha_min
 
-			# Update alpha2
-			with torch.no_grad():
-				sampled_logp_target = 0
-				sampled_actions_target = []
-				for i, actor in enumerate(self.actor_target):
-					obs_a_i = obs[:, i]
-					probs_i = actor(obs_a_i)
-					dist_i = Categorical(probs_i)
-					sampled_a_i = dist_i.sample()
-					sampled_logp_target = sampled_logp_target + dist_i.log_prob(sampled_a_i)
-					sampled_actions_target.append(sampled_a_i.unsqueeze(1).long())
-			sampled_actions_target_cat = torch.cat(sampled_actions_target, dim=1)
-			sampled_actions_target_oh = F.one_hot(sampled_actions_target_cat.long(), num_classes=self.n_actions).float()
+			if self.scaled_information_gain_coef > 0:
+				# Update alpha2
+				with torch.no_grad():
+					sampled_logp_target = 0
+					sampled_actions_target = []
+					for i, actor in enumerate(self.actor_target):
+						obs_a_i = obs[:, i]
+						probs_i = actor(obs_a_i)
+						dist_i = Categorical(probs_i)
+						sampled_a_i = dist_i.sample()
+						sampled_logp_target = sampled_logp_target + dist_i.log_prob(sampled_a_i)
+						sampled_actions_target.append(sampled_a_i.unsqueeze(1).long())
+				sampled_actions_target_cat = torch.cat(sampled_actions_target, dim=1)
+				sampled_actions_target_oh = F.one_hot(sampled_actions_target_cat.long(), num_classes=self.n_actions).float()
 
-			info_bonus_target_raw = self.information_bonus_raw(state, sampled_actions_target_oh)
-			info_bonus_raw = self.information_bonus_raw(state, sampled_actions_oh)
+				info_bonus_target_raw = self.information_bonus_raw(state, sampled_actions_target_oh)
+				info_bonus_raw = self.information_bonus_raw(state, sampled_actions_oh)
 
-			alpha2_loss = (self.log_alpha2.exp() * (info_bonus_raw - info_bonus_target_raw).detach()).mean()
-			self.alpha2_optimizer.zero_grad()
-			alpha2_loss.backward()
-			self.alpha2_optimizer.step()
-			self.alpha2 = self.log_alpha2.exp()
+				alpha2_loss = (self.log_alpha2.exp() * (info_bonus_raw - info_bonus_target_raw).detach()).mean()
+				self.alpha2_optimizer.zero_grad()
+				alpha2_loss.backward()
+				self.alpha2_optimizer.step()
+				self.alpha2 = self.log_alpha2.exp()
+			else:
+				alpha2_loss = torch.tensor(0.0)
+				self.alpha2 = self.alpha_min
 
 			alpha_info = {
 				'alpha1_loss': alpha1_loss.item(),
