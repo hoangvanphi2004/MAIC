@@ -52,7 +52,10 @@ class CNNBaseNet(nn.Module):
             nn.Linear(hidden, 32 * self.bottleneck_h * self.bottleneck_w),
         )
 
-        # Lightweight decoder with a single skip from early encoder features.
+        # Project the deeper encoder feature map into bottleneck space for a second skip.
+        self.skip2_proj = nn.Conv2d(32 + 32, 32, kernel_size=1)
+
+        # Lightweight decoder with two skips from encoder features.
         self.dec_block1 = nn.Sequential(
             nn.Conv2d(32 + 16, 32, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -144,8 +147,12 @@ class CNNBaseNet(nn.Module):
         fused_latent = torch.cat([state_latent, action_encoded], dim=1)
         dec_seed = self.fuse_fc(fused_latent)
         dec_seed = dec_seed.view(batch_size, 32, self.bottleneck_h, self.bottleneck_w)
+
+        # Decode with a bottleneck skip from x2 and a spatial skip from x1.
+        x2_skip = F.interpolate(x2, size=(self.bottleneck_h, self.bottleneck_w), mode='bilinear', align_corners=False)
+        dec_seed = torch.cat([dec_seed, x2_skip], dim=1)
+        dec_seed = F.relu(self.skip2_proj(dec_seed))
         
-        # Decode with skip fusion from x1.
         x3 = F.interpolate(dec_seed, size=x1.shape[-2:], mode='bilinear', align_corners=False)
         x3 = torch.cat([x3, x1], dim=1)
         x3 = self.dec_block1(x3)
