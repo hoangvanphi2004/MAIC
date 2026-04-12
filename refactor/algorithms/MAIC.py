@@ -390,9 +390,9 @@ class SAC_REINFORCE:
 
 			alpha_info = {
 				'alpha1_loss': alpha1_loss.item(),
-				'alpha1_value': self.alpha1.item(),
+				'alpha1_value': self.alpha1.item() if isinstance(self.alpha1, torch.Tensor) else float(self.alpha1),
 				'alpha2_loss': alpha2_loss.item(),
-				'alpha2_value': self.alpha2.item()
+				'alpha2_value': self.alpha2.item() if isinstance(self.alpha2, torch.Tensor) else float(self.alpha2)
 			}
 
 		t7 = time.time()
