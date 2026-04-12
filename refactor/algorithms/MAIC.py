@@ -194,18 +194,19 @@ class SAC_REINFORCE:
 		
 		t2 = time.time()
 		# Update normalizers
-		with torch.no_grad():
-			actions_oh = F.one_hot(action.long(), num_classes=self.n_actions).float()
+		if self.scaled_information_gain_coef > 0:
+			with torch.no_grad():
+				actions_oh = F.one_hot(action.long(), num_classes=self.n_actions).float()
 
-			states_flat = state.reshape(state.size(0), -1)
-			actions_oh_flat = actions_oh.reshape(actions_oh.shape[0], -1)
-			next_state_flat = next_state.reshape(next_state.size(0), -1)
-			ensemble_input = torch.cat([states_flat, actions_oh_flat], dim=-1)
-			info_bonus_raw = self.information_bonus_raw(state, actions_oh)
-			
-			self.information_bonus_normalizer.update(info_bonus_raw)
-			self.input_normalizer.update(ensemble_input)
-			self.output_normalizer.update(next_state_flat)
+				states_flat = state.reshape(state.size(0), -1)
+				actions_oh_flat = actions_oh.reshape(actions_oh.shape[0], -1)
+				next_state_flat = next_state.reshape(next_state.size(0), -1)
+				ensemble_input = torch.cat([states_flat, actions_oh_flat], dim=-1)
+				info_bonus_raw = self.information_bonus_raw(state, actions_oh)
+				
+				self.information_bonus_normalizer.update(info_bonus_raw)
+				self.input_normalizer.update(ensemble_input)
+				self.output_normalizer.update(next_state_flat)
 
 		t3 = time.time()
 		# Update critic
