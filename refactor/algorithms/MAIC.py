@@ -21,6 +21,9 @@ class SAC_REINFORCE:
 				 tau=0.01, alpha1=0.01, alpha2=0.01, alpha_kl=0.1, alpha_min=1e-4, policy_update_steps=3,
 				 auto_entropy_tuning=False, target_entropy_scale=0.2, model_init_seed=42):
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+		self.ensemble_device = torch.device("cuda" if torch.cuda.is_available() else self.device)
+		if self.ensemble_device.type == "cuda":
+			torch.backends.cudnn.benchmark = True
 		self.gamma = gamma
 		self.tau = tau
 		self.n_actions = action_dim
@@ -73,7 +76,7 @@ class SAC_REINFORCE:
 				action_dim=action_dim * num_agents,
 				out_dim=self.output_ensemble_shape,
 				hidden=128,
-				device=self.device,
+				device=self.ensemble_device,
 				base_seed=self.model_init_seed,
 			)
 		else:
@@ -82,7 +85,7 @@ class SAC_REINFORCE:
 				out_dim=self.output_ensemble_shape,
 				M=5,
 				hidden=128,
-				device=self.device,
+				device=self.ensemble_device,
 				base_seed=self.model_init_seed,
 			)
 		self.ensemble_regressor.setup_optimizers(3e-4)
@@ -385,8 +388,8 @@ class SAC_REINFORCE:
 				target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 		t8 = time.time()
-		# print(f"Times: sample={t2-t1:.3f}s, norm={t3-t2:.3f}s, critic={t4-t3:.3f}s, actor={t5-t4:.3f}s, ensemble={t6-t5:.3f}s, alpha={t7-t6:.3f}s, target_update={t8-t7:.3f}s")
-		# print(f"Total update time: {t8-t1:.3f}s")
+		print(f"Times: sample={t2-t1:.3f}s, norm={t3-t2:.3f}s, critic={t4-t3:.3f}s, actor={t5-t4:.3f}s, ensemble={t6-t5:.3f}s, alpha={t7-t6:.3f}s, target_update={t8-t7:.3f}s")
+		print(f"Total update time: {t8-t1:.3f}s")
 		avg_return = float(np.sum(rewards_arr))
 		policy_return = {
 			'policy_loss': actor_loss_value / float(self.policy_update_steps),

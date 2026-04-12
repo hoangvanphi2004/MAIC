@@ -9,10 +9,10 @@ import numpy as np
 
 
 class CNNBaseNet(nn.Module):
-    """Simplified CNN dynamics model: (state, action) -> next_state distribution."""
+    """Lightweight CNN dynamics model: (state, action) -> next_state distribution."""
     
     def __init__(self, state_shape: Tuple[int, int, int], action_dim: int, out_dim: int = 1,
-                 hidden: int = 128, nlayers: int = 2, latent_dim: Optional[int] = 128,
+                 hidden: int = 128, nlayers: int = 2, latent_dim: Optional[int] = 64,
                  use_random_prior: bool = True, init_seed: Optional[int] = None):
         super().__init__()
         
@@ -30,7 +30,7 @@ class CNNBaseNet(nn.Module):
 
         # Encode image into a compact latent vector that is much smaller than raw pixels.
         if latent_dim is None:
-            latent_dim = 128
+            latent_dim = 64
         self.latent_dim = int(latent_dim)
         if self.latent_dim < 1:
             raise ValueError("latent_dim must be positive")
@@ -38,34 +38,28 @@ class CNNBaseNet(nn.Module):
         self.bottleneck_h = self.state_h // 4
         self.bottleneck_w = self.state_w // 4
         
-        # Encoder: downsample then pool to bottleneck feature map.
-        self.enc_conv1 = nn.Conv2d(self.state_channels, 32, kernel_size=3, stride=2, padding=1)
-        self.enc_conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
+        # Smaller encoder for lower compute cost.
+        self.enc_conv1 = nn.Conv2d(self.state_channels, 16, kernel_size=3, stride=2, padding=1)
+        self.enc_conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1)
         self.enc_pool = nn.AdaptiveAvgPool2d((self.bottleneck_h, self.bottleneck_w))
-        self.enc_fc = nn.Linear(64 * self.bottleneck_h * self.bottleneck_w, self.latent_dim)
+        self.enc_fc = nn.Linear(32 * self.bottleneck_h * self.bottleneck_w, self.latent_dim)
         
-        # Action encoder + latent fusion in compact space.
-        self.action_encoder = nn.Sequential(
-            nn.Linear(action_dim, hidden),
-            nn.ReLU(),
-            nn.Linear(hidden, self.latent_dim),
-        )
+        # Single-layer action encoder to keep model compact.
+        self.action_encoder = nn.Linear(action_dim, self.latent_dim)
         self.fuse_fc = nn.Sequential(
             nn.Linear(self.latent_dim * 2, hidden),
             nn.ReLU(),
-            nn.Linear(hidden, 64 * self.bottleneck_h * self.bottleneck_w),
+            nn.Linear(hidden, 32 * self.bottleneck_h * self.bottleneck_w),
         )
 
-        # U-Net style decoder: bilinear upsample + skip fusion + conv refinement.
+        # Lightweight decoder with a single skip from early encoder features.
         self.dec_block1 = nn.Sequential(
-            nn.Conv2d(64 + 32, 64, kernel_size=3, padding=1),
+            nn.Conv2d(32 + 16, 32, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
             nn.ReLU(),
         )
         self.dec_block2 = nn.Sequential(
-            nn.Conv2d(64, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
             nn.Conv2d(32, 32, kernel_size=3, padding=1),
             nn.ReLU(),
         )
@@ -149,9 +143,9 @@ class CNNBaseNet(nn.Module):
         action_encoded = self.action_encoder(action)
         fused_latent = torch.cat([state_latent, action_encoded], dim=1)
         dec_seed = self.fuse_fc(fused_latent)
-        dec_seed = dec_seed.view(batch_size, 64, self.bottleneck_h, self.bottleneck_w)
+        dec_seed = dec_seed.view(batch_size, 32, self.bottleneck_h, self.bottleneck_w)
         
-        # Decode with bilinear upsampling and U-Net style skip connection.
+        # Decode with skip fusion from x1.
         x3 = F.interpolate(dec_seed, size=x1.shape[-2:], mode='bilinear', align_corners=False)
         x3 = torch.cat([x3, x1], dim=1)
         x3 = self.dec_block1(x3)
