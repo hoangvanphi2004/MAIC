@@ -1,7 +1,10 @@
 plot.py
+/plot
+/old_plot
 /oldwork
 /QMIX/.gitignore
 /QMIX/runs
+/QMIX
 /refactor/runs
 /__pycache__
 *.json

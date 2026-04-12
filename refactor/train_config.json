@@ -1,7 +1,7 @@
 {
   "env_id": "MultiGrid-MultiTargetEmpty-16x16-v0",
   "num_agents": 2,
-  "obs_state_mode": "simple",
+  "obs_state_mode": "full",
   "seed": 42,
   "episodes": 5000,
   "steps_per_episode": 40,	

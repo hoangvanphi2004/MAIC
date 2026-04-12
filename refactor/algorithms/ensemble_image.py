@@ -12,8 +12,8 @@ class CNNBaseNet(nn.Module):
     """Simplified CNN dynamics model: (state, action) -> next_state distribution."""
     
     def __init__(self, state_shape: Tuple[int, int, int], action_dim: int, out_dim: int = 1,
-                 hidden: int = 128, nlayers: int = 2, use_random_prior: bool = True, 
-                 init_seed: Optional[int] = None):
+                 hidden: int = 128, nlayers: int = 2, latent_dim: Optional[int] = 128,
+                 use_random_prior: bool = True, init_seed: Optional[int] = None):
         super().__init__()
         
         # Use a local numpy RNG so per-model diversity does not mutate global RNG state.
@@ -25,20 +25,50 @@ class CNNBaseNet(nn.Module):
         self.state_h = state_shape[1]
         self.state_w = state_shape[2]
         self.flat_state_dim = self.state_channels * self.state_h * self.state_w
+        if self.state_h < 4 or self.state_w < 4:
+            raise ValueError("state spatial size must be at least 4x4")
+
+        # Encode image into a compact latent vector that is much smaller than raw pixels.
+        if latent_dim is None:
+            latent_dim = 128
+        self.latent_dim = int(latent_dim)
+        if self.latent_dim < 1:
+            raise ValueError("latent_dim must be positive")
+
+        self.bottleneck_h = self.state_h // 4
+        self.bottleneck_w = self.state_w // 4
         
-        # Simplified encoder: just 2 conv layers
-        self.conv1 = nn.Conv2d(self.state_channels, 32, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
+        # Encoder: downsample then pool to bottleneck feature map.
+        self.enc_conv1 = nn.Conv2d(self.state_channels, 32, kernel_size=3, stride=2, padding=1)
+        self.enc_conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
+        self.enc_pool = nn.AdaptiveAvgPool2d((self.bottleneck_h, self.bottleneck_w))
+        self.enc_fc = nn.Linear(64 * self.bottleneck_h * self.bottleneck_w, self.latent_dim)
         
-        # Action encoder
+        # Action encoder + latent fusion in compact space.
         self.action_encoder = nn.Sequential(
             nn.Linear(action_dim, hidden),
             nn.ReLU(),
-            nn.Linear(hidden, 32 * self.state_h * self.state_w),
+            nn.Linear(hidden, self.latent_dim),
+        )
+        self.fuse_fc = nn.Sequential(
+            nn.Linear(self.latent_dim * 2, hidden),
+            nn.ReLU(),
+            nn.Linear(hidden, 64 * self.bottleneck_h * self.bottleneck_w),
         )
 
-        # Decoder
-        self.conv3 = nn.Conv2d(64, 32, kernel_size=3, padding=1)  # 64 = 32 (conv) + 32 (action)
+        # U-Net style decoder: bilinear upsample + skip fusion + conv refinement.
+        self.dec_block1 = nn.Sequential(
+            nn.Conv2d(64 + 32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+        self.dec_block2 = nn.Sequential(
+            nn.Conv2d(64, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
         
         # Output heads
         self.mu_head = nn.Conv2d(32, self.state_channels, kernel_size=1)
@@ -109,19 +139,24 @@ class CNNBaseNet(nn.Module):
         if self.use_random_prior:
             model_in = model_in + torch.tanh(self.random_projection(model_in))
 
-        # Simple encoder
-        x1 = F.relu(self.conv1(model_in))
-        x2 = F.relu(self.conv2(x1))
+        # Encode image to compact latent.
+        x1 = F.relu(self.enc_conv1(model_in))
+        x2 = F.relu(self.enc_conv2(x1))
+        x2 = self.enc_pool(x2)
+        state_latent = self.enc_fc(x2.flatten(start_dim=1))
         
-        # Encode action and reshape to match spatial dimensions
+        # Fuse action in latent space.
         action_encoded = self.action_encoder(action)
-        action_map = action_encoded.view(batch_size, 32, self.state_h, self.state_w)
+        fused_latent = torch.cat([state_latent, action_encoded], dim=1)
+        dec_seed = self.fuse_fc(fused_latent)
+        dec_seed = dec_seed.view(batch_size, 64, self.bottleneck_h, self.bottleneck_w)
         
-        # Concatenate features and action
-        combined = torch.cat([x2, action_map], dim=1)
-        
-        # Decoder
-        x3 = F.relu(self.conv3(combined))
+        # Decode with bilinear upsampling and U-Net style skip connection.
+        x3 = F.interpolate(dec_seed, size=x1.shape[-2:], mode='bilinear', align_corners=False)
+        x3 = torch.cat([x3, x1], dim=1)
+        x3 = self.dec_block1(x3)
+        x3 = F.interpolate(x3, size=(self.state_h, self.state_w), mode='bilinear', align_corners=False)
+        x3 = self.dec_block2(x3)
 
         # Output heads
         mu_map = self.mu_head(x3)
@@ -157,9 +192,9 @@ def fgsm_attack(model: nn.Module, x: torch.Tensor, y: torch.Tensor, eps: float) 
 class CNNEnsembleRegressor:
     """Ensemble regressor using CNN-based models for image states"""
     
-    def __init__(self, M: int, state_shape: Tuple[int, int, int], action_dim: int, 
-                 out_dim: int = 1, hidden: int = 128, nlayers: int = 2, 
-                 device: Optional[torch.device] = None, use_random_prior: bool = True, 
+    def __init__(self, M: int, state_shape: Tuple[int, int, int], action_dim: int,
+                 out_dim: int = 1, hidden: int = 128, nlayers: int = 2,
+                 device: Optional[torch.device] = None, use_random_prior: bool = True,
                  base_seed: int = 42):
         self.M = M
         self.out_dim = out_dim
@@ -172,7 +207,7 @@ class CNNEnsembleRegressor:
         for i in range(M):
             # Each model gets a unique seed for diverse initialization
             model_seed = base_seed + i * 1000
-            model = CNNBaseNet(state_shape, action_dim, out_dim, hidden, nlayers, 
+            model = CNNBaseNet(state_shape, action_dim, out_dim, hidden, nlayers,
                              use_random_prior=use_random_prior, 
                              init_seed=model_seed).to(self.device)
             self.models.append(model)
