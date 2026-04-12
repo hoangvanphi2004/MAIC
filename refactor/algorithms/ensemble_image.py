@@ -146,7 +146,6 @@ class CNNBaseNet(nn.Module):
         dec_seed = dec_seed.view(batch_size, 32, self.bottleneck_h, self.bottleneck_w)
 
         # Decode with a spatial skip from x1.
-        
         x3 = F.interpolate(dec_seed, size=x1.shape[-2:], mode='bilinear', align_corners=False)
         x3 = torch.cat([x3, x1], dim=1)
         x3 = self.dec_block1(x3)
