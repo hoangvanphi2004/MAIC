@@ -10,9 +10,9 @@ class Actor(nn.Module):
 		super(Actor, self).__init__()
 		self.is_image_obs = len(obs_shape) == 3
 		if self.is_image_obs:
-			self.conv1 = nn.Conv2d(obs_shape[2], 16, kernel_size=4, stride=2, padding=1)
-			self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
-			def conv2d_size_out(size, kernel_size=4, stride=2, padding=1):
+			self.conv1 = nn.Conv2d(obs_shape[2], 16, kernel_size=3, stride=2, padding=1)
+			self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1)
+			def conv2d_size_out(size, kernel_size=3, stride=2, padding=1):
 				return (size + 2 * padding - kernel_size) // stride + 1
 			h = conv2d_size_out(conv2d_size_out(obs_shape[0]))
 			w = conv2d_size_out(conv2d_size_out(obs_shape[1]))
@@ -55,9 +55,9 @@ class Critic(nn.Module):
 		self.is_image_state = len(state_shape) == 3
 		if self.is_image_state:
 			# Global state input: [batch, channels, height, width]
-			self.conv1 = nn.Conv2d(state_shape[2], 16, kernel_size=4, stride=2, padding=1)
-			self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
-			def conv2d_size_out(size, kernel_size=4, stride=2, padding=1):
+			self.conv1 = nn.Conv2d(state_shape[2], 16, kernel_size=3, stride=2, padding=1)
+			self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1)
+			def conv2d_size_out(size, kernel_size=3, stride=2, padding=1):
 				return (size + 2 * padding - kernel_size) // stride + 1
 			h = conv2d_size_out(conv2d_size_out(state_shape[0]))
 			w = conv2d_size_out(conv2d_size_out(state_shape[1]))
