@@ -388,8 +388,8 @@ class SAC_REINFORCE:
 				target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 		t8 = time.time()
-		print(f"Times: sample={t2-t1:.3f}s, norm={t3-t2:.3f}s, critic={t4-t3:.3f}s, actor={t5-t4:.3f}s, ensemble={t6-t5:.3f}s, alpha={t7-t6:.3f}s, target_update={t8-t7:.3f}s")
-		print(f"Total update time: {t8-t1:.3f}s")
+		# print(f"Times: sample={t2-t1:.3f}s, norm={t3-t2:.3f}s, critic={t4-t3:.3f}s, actor={t5-t4:.3f}s, ensemble={t6-t5:.3f}s, alpha={t7-t6:.3f}s, target_update={t8-t7:.3f}s")
+		# print(f"Total update time: {t8-t1:.3f}s")
 		avg_return = float(np.sum(rewards_arr))
 		policy_return = {
 			'policy_loss': actor_loss_value / float(self.policy_update_steps),
