@@ -36,7 +36,7 @@ class BaseNet(nn.Module):
         for _ in range(nlayers):
             layers.append(nn.Linear(last, hidden))
             layers.append(nn.LayerNorm(hidden))
-            layers.append(nn.SiLU())
+            layers.append(nn.ReLU())
             last = hidden
         self.feature = nn.Sequential(*layers)
         self.mean_head = nn.Linear(last, out_dim)
