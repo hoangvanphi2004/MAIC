@@ -30,5 +30,65 @@ Cuối cùng, ta có thể huấn luyện mô hình sử dụng câu lệnh:
 python /refactor/main.py 
 ```
 
-## Lời Cảm Ơn
-## Liên Hệ
+### Điều chỉnh config
+
+Tùy vào loại môi trường, mô hình và các thông số mà ta cần huấn luyện mà ta có thể thay đổi các thông số tại file `refactor\train_config.json`
+
+| Tên tham số      | Mô tả |
+  --- | --- |
+  | env_id | Thể hiện tên loại môi trường mà ta muốn huấn luyện, tên các loại môi trường có thể được tìm kiếm tại file `refactor\multigrid\multigrid\envs\__init__.py` |
+  | num_agents | Số lượng tác tử được sử dụng trong môi trường |
+  | obs_state_mode | Tùy chỉnh số chiều trạng thái, với `full` thể hiện số chiều trạng thái cao và `simple` thể hiện số chiều trạng thái thấp |
+  | seed | Seed huấn luyện mô hình |
+  | episodes | Số lượng lần huấn luyện (episodes) trong cả quá trình huấn luyện |
+  | steps_per_episode | Số bước thời gian tối đa mà các tác tử có thể tương tác với môi trường |
+  | replay_size | Độ lớn của bộ đệm phát lại (Replay Buffer) |
+  | batch_size | Độ lớn của một lô dữ liệu (batch) trong quá trình huấn luyện |
+  | start_steps | Số bước thời gian (timestep) chọn hành động ngẫu nhiên kể từ khi bắt đầu huấn luyện |
+  | steps_per_update | Tần suất huấn luyện |
+  | updates_num | Số lô dữ liệu được huấn luyện trong một lần huấn luyện |
+  | save_every | Tấn suất lưu dữ liệu tính theo episode |
+  | model_dir | Đường dẫn thư mục lưu mô hình |
+  | render | Bật/Tắt hiện video thể hiện quá trình các tác tử tương tác trong quá trình huấn luyện |
+  | record_video | Bật/Tắt Lưu video thể hiện quá trình tương tác trong quá trình huấn luyện |
+  | video_every | Tấn suất lưu vieo thể hiện quá trình tương tác tính theo episode |
+  | plot_every | Tần suất vẽ biểu đồ của cấc thông số trong quá trình huấn luyện |
+  | scaled_information_gain_coef | Hằng số thể hiện độ ảnh hưởng của lượng thông tin thu thập đến quá trình huấn luyện của mô hình, hằng số này bằng 0 có nghĩa là hoàn toàn không dùng lượng thông tin thu thập |
+  | scaled_entropy_coef | Hằng số thể hiện độ ảnh hưởng của entropy đến quá trình huấn luyện của mô hình, hằng số này bằng 0 có nghĩa là hoàn toàn không sử dụng entropy |
+  | model_config | Các thông số của mô hình |
+
+Các thông số của mô hình được mô tả ở bảng sau:
+
+| Tên tham số      | Mô tả |
+  --- | --- |
+  | hidden_dim | Kích thước các chiều ẩn của Actor và Critic |
+  | lr | Tốc độ huấn luyện (learning rate) |
+  | gamma | Giá trị tham số $\gamma$ |
+  | tau | Giá trị tham số $\tau$ |
+  | alpha1 | Giá trị ban đầu của tham số $\alpha_1$ |
+  | alpha2 | Giá trị ban đầu của tham số $\alpha_2$ |
+  | alpha_kl | Giá trị của tham số $\alpha_{KL}$ |
+  | policy_update_steps | Số lần cập nhật mỗi lần cập nhật Actor |
+  | auto_entropy_tuning | Bật/Tắt tự động điều chỉnh $\alpha_1$ và $\alpha_2$ |
+  | target_entropy_scale | Giá trị $\beta$ trong $\mathcal{\bar{H}} = \beta \log(n\|A\|)$ |
+
+### Dữ liệu đầu ra
+
+Các dữ liệu về hiệu năng của mô hình sẽ được thu thập vào file `metrics_latest.json`, file này sẽ gồm các trường dữ liệu được thể hiện ở bảng bên dưới
+  
+| Trường dữ liệu      | Mô tả |
+  --- | --- |
+  | episode_rewards | Tổng phần thưởng thu thập được mỗi episode |
+  | episode_lengths | Số bước thời gian (timestep) của mỗi episode |
+  | actor_losses | Giá trị trung bình mất mát của Actor theo mỗi episode |
+  | critic_losses | Giá trị trung bình mất mát của Critic theo mỗi episode |
+  | alpha1_losses | Giá trị trung bình mất mát của $\alpha_1$ theo mỗi episode |
+  | alpha2_losses | Giá trị trung bình mất mát của $\alpha_2$ theo mỗi episode |
+  | q_values | Giá trị trung bình của hàm giá trị theo mỗi episode |
+  | entropies | Giá trị trung bình của độ bất định theo mỗi episode |
+  | alpha1_values | Giá trị trung bình của $\alpha_1$ theo mỗi episode |
+  | alpha2_values | Giá trị trung bình của $\alpha_2$ theo mỗi episode |
+  | information_gains | Giá trị trung bình của lượng thông tin thu thập theo mỗi episode |
+  | kl_divergences | Giá trị trung bình của KL divergence giữa chính sách mới và chính sách cũ theo mỗi episode |
+  | unique_states_seen | Số lượng trạng thái mà tác tử đã đi qua tính đến 1 episode nhất định |
+
