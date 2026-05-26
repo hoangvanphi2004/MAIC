@@ -30,7 +30,13 @@ Cuối cùng, ta có thể huấn luyện mô hình sử dụng câu lệnh:
 python /refactor/main.py 
 ```
 
-### Điều chỉnh config
+Ngoài ra, để chạy mô hình đã được lưu ta có thể sử dụng câu lệnh:
+
+```bash
+python refactor/inference.py
+```
+
+### Điều chỉnh training config
 
 Tùy vào loại môi trường, mô hình và các thông số mà ta cần huấn luyện mà ta có thể thay đổi các thông số tại file `refactor\train_config.json`
 
@@ -72,7 +78,22 @@ Các thông số của mô hình được mô tả ở bảng sau:
   | auto_entropy_tuning | Bật/Tắt tự động điều chỉnh $\alpha_1$ và $\alpha_2$ |
   | target_entropy_scale | Giá trị $\beta$ trong $\mathcal{\bar{H}} = \beta \log(n\|A\|)$ |
 
-### Dữ liệu đầu ra
+### Điều chỉnh inference config
+
+Để tùy chỉnh quá trình chạy mô hình đã được lưu, ta có thể điều chỉnh các trường trong file `inference_config.json`
+
+| Tên tham số      | Mô tả |
+  --- | --- |
+  | env_id | Thể hiện tên loại môi trường ta muốn chạy |
+  | num_agents | Số lượng tác tử trong môi trường |
+  | obs_state_mode | Tùy chỉnh số chiều trạng thái, với `full` thể hiện số chiều trạng thái cao và `simple` thể hiện số chiều trạng thái thấp |
+  | checkpoint | Checkpoint của mô hình đã lưu |
+  | episodes | Số lần chạy của mô hình |
+  | save_video | Đường dẫn thư mục để lưu video thể hiện quá tương tác của tác tử |
+  | fps | Số khung hình một giây của video thể hiện quá tương tác của tác tử |
+  | steps_per_episode | Số bước thời gian (timestep) mỗi episode |
+
+## Dữ liệu đầu ra của quá trình huấn luyện
 
 Các dữ liệu về hiệu năng của mô hình sẽ được thu thập vào file `metrics_latest.json`, file này sẽ gồm các trường dữ liệu được thể hiện ở bảng bên dưới
   
@@ -91,4 +112,15 @@ Các dữ liệu về hiệu năng của mô hình sẽ được thu thập vào
   | information_gains | Giá trị trung bình của lượng thông tin thu thập theo mỗi episode |
   | kl_divergences | Giá trị trung bình của KL divergence giữa chính sách mới và chính sách cũ theo mỗi episode |
   | unique_states_seen | Số lượng trạng thái mà tác tử đã đi qua tính đến 1 episode nhất định |
+
+Ngoài ra dữ liệu đầu ra còn có mô hình được lưu lại (pth file) và video thể hiện quá trình tương tác được lưu lại với tần suất được định nghĩa trong config.
+
+## Kết quả
+
+<p align="center"><img width="512" height="512" alt="inference" src="https://github.com/user-attachments/assets/5bf30e74-1f8b-4c40-b72f-9bc923502981" /></p>
+
+<img width="1130" height="667" alt="image" src="https://github.com/user-attachments/assets/ac91e98b-7cf3-480c-98fa-7e5d45a48a98" />
+
+<img width="1131" height="665" alt="image" src="https://github.com/user-attachments/assets/e9ab459e-209f-4fbc-b373-9800fe16a79c" />
+
 
