@@ -8,7 +8,7 @@ import multigrid.envs
 import imageio
 import torch
 
-from algorithms.MAIC import SAC_REINFORCE
+from algorithms.MAIC import MAIC
 from algorithms.buffer import ReplayBuffer
 from plot import save_plots
 from train_helpers import TrainingMetrics
@@ -55,11 +55,11 @@ def run_training(
 
 	_set_global_seed(seed)
 
-	SAC_REINFORCE.scaled_information_gain_coef = float(scaled_information_gain_coef)
-	SAC_REINFORCE.scaled_entropy_coef = float(scaled_entropy_coef)
+	MAIC.scaled_information_gain_coef = float(scaled_information_gain_coef)
+	MAIC.scaled_entropy_coef = float(scaled_entropy_coef)
 	print('seed:', int(seed))
-	print('scaled_information_gain_coef:', SAC_REINFORCE.scaled_information_gain_coef)
-	print('scaled_entropy_coef:', SAC_REINFORCE.scaled_entropy_coef)
+	print('scaled_information_gain_coef:', MAIC.scaled_information_gain_coef)
+	print('scaled_entropy_coef:', MAIC.scaled_entropy_coef)
 
 	resolved_model_config = {
 		'hidden_dim': 128,
@@ -130,7 +130,7 @@ def run_training(
 	state_shape = state0_arr.shape
 	action_dim = env.action_space[0].n
 	print('Env:', env_id, 'num_agents:', num_agents, 'mode:', obs_state_mode, 'obs_shape:', obs_shape, 'state_shape:', state_shape, 'action_dim:', action_dim)
-	agent = SAC_REINFORCE(
+	agent = MAIC(
 		obs_shape,
 		state_shape,
 		action_dim,

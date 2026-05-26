@@ -13,7 +13,7 @@ from .ensemble_image import CNNEnsembleRegressor
 
 eps = 1e-8
 
-class SAC_REINFORCE:
+class MAIC:
 	scaled_information_gain_coef = 0.0
 	scaled_entropy_coef = 0.0
 
